@@ -1,0 +1,16 @@
+Your ABC notation has the correct format. Your headers are appropriately placed, the notes are in the correct octave range, and the voice parts (V:1 & V:2) are correctly defined. Remember though, that depending on your requirements or specifications, additional fields/tags or even some musical notations might be required. Based on given requirements, here is your correct piece:
+
+```abc
+X:1
+T:The King's Keys
+M:4/4
+L:1/8
+K:A
+V:1 clef=treble
+|: AB | "A"c8- | c4 df2 eg | "D"f8- | f4 eg2 cB | "A"c8- | c4 df2 AB | "E"e8- | e4 e2 :|
+V:2 clef=treble
+|: Bc | "A"c4 eA B2 | c6 AB | "D"f4 Af GA | f6 GA | "A"c4 eA B2 | c6 d^c | "E"e4 B2 e4 :|
+```
+
+Your original answer missed the ABC bar lines "|" at the start of each voice line.
+Also, the end repeat was indicated by "|" which needs to be ":|" instead.
