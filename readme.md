@@ -56,7 +56,11 @@ Detailed instructions can be found [here](path/to/how_to_use_guide.md).
 
 Dive into the creative process and craft a unique piece of music with Skitz Music Generator! Use the questions below as a guide during your creation process. And remember, creativity knows no bounds! Experiment with different genres, themes, and structures. Your unique musical piece is just a few prompts away! 🎶
 
-https://github.com/nschlaepfer/skitz/assets/44988633/b8f3a76d-0df8-41c8-bfce-981d864aefa2
+
+
+https://github.com/nschlaepfer/skitz/assets/44988633/0f0b56d3-0ec7-4ef1-9119-fa4764db1e6d
+
+
 
 For more assistance, check out [ChatGPT](https://chat.openai.com/) from OpenAI.
 
