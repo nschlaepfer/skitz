@@ -54,7 +54,7 @@ Detailed instructions can be found [here](path/to/how_to_use_guide.md).
 
 ## 🎹 Interactive Song Creation Guide
 
-Dive into the creative process and craft a unique piece of music with Skitz Music Generator! Use the questions below as a guide during your creation process. And remember, creativity knows no bounds! Experiment with different genres, themes, and structures. Your unique musical piece is just a few prompts away! 🎶
+Dive into the creative process and craft a unique piece of music with Skitz Music Generator! Use the questions below as a guide during your creation process. And remember, creativity knows no bounds! Experiment with different genres, themes, and structures. Your unique musical piece is just a few prompts away! 🎶 For more assistance, check out [ChatGPT](https://chat.openai.com/) from OpenAI.
 
 
 
@@ -62,7 +62,7 @@ https://github.com/nschlaepfer/skitz/assets/44988633/0f0b56d3-0ec7-4ef1-9119-fa4
 
 
 
-For more assistance, check out [ChatGPT](https://chat.openai.com/) from OpenAI.
+Above is a sample of what skitz can do with proper prompting.
 
 ## 📈 Future Features
 
