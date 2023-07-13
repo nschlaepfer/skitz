@@ -3,7 +3,7 @@
 Skitz is a Python program that uses OpenAI's GPT-4 model to generate creative and original music based on user inputs. 🎼🎹🎷🎸
 
 
-[![Nos_ult's GitHub stats](https://github-readme-stats.vercel.app/api?username=nos_ult)](https://github.com/nschlaepfer/github-readme-stats)
+[![Nos_ult's GitHub stats](https://github-readme-stats.vercel.app/api?username=nschlaepfer)](https://github.com/nschlaepfer/github-readme-stats)
 
 Follow me on Twitter: [![Twitter Follow](https://img.shields.io/twitter/follow/nos_ult?label=Follow&style=social)](https://twitter.com/nos_ult)
 
