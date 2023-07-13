@@ -85,6 +85,13 @@ After the program generates a song, it will save it as an ABC file in the `Gener
 
 To view and listen to your generated music, open the ABC file in Visual Studio Code with the ABC Tools extension installed. The extension will allow you to see the sheet music and convert it into a MIDI file.
 
+## 🚨 Issues
+
+If you encounter any issues while working with the ABC code in VS Code, it could possibly be due to a syntax error. Please ensure that the code is written correctly.
+
+In case the code still doesn't play in VS Code, you can try using the ABC Web Player by visiting the following link: [ABC Web Player](https://abc.rectanglered.com/). This web player allows you to play the ABC code and listen to the music generated.
+
+If you continue to face any difficulties or have any questions, please feel free to reach out for assistance.
 ## 💡 Contributing
 
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change. 🤝
