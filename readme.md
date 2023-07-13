@@ -92,14 +92,14 @@ If you find this project useful for your research or if you use parts of this co
 
 ```bibtex
 @misc{SkitzMusicGenerator,
-  author = {Your Name},
+  author = {Nicolas W Schlaepfer},
   title = {Skitz: A Music Generator
 
 },
   year = {2023},
   publisher = {GitHub},
   journal = {GitHub repository},
-  howpublished = {\url{https://github.com/YourGithubUsername/Skitz}}
+  howpublished = {\url{https://github.com/nos_ult/Skitz}}
 }
 ```
 
