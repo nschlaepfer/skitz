@@ -2,6 +2,13 @@
 
 Skitz is a Python program that uses OpenAI's GPT-4 model to generate creative and original music based on user inputs. 🎼🎹🎷🎸
 
+
+<img width="1608" alt="Screenshot 2023-07-13 at 11 49 36 AM" src="https://github.com/nschlaepfer/skitz/assets/44988633/3af3eeea-814d-4ce0-9244-5754ef44fe10">
+
+
+
+
+
 ## 🚀 Pre-requisites
 
 Before you begin, ensure you have met the following requirements:
@@ -72,6 +79,9 @@ To run Skitz, navigate to the project directory and run the Python script `main.
 ```bash
 python main.py
 ```
+<img width="637" alt="Screenshot 2023-07-13 at 12 14 12 PM" src="https://github.com/nschlaepfer/skitz/assets/44988633/a75fbe82-e97e-476a-9827-c8296c96b242">
+
+
 
 Follow the interactive prompt in your terminal to generate your music. You can choose between Easy and Advanced mode based on your familiarity with music theory and desired level of customization.
 
