@@ -1,0 +1,36 @@
+Your ABC music notation syntax is mostly correct, but there are a couple of areas that need improvement. 
+
+1. Remove the 'python' from your opening code delimiter. The 'python' implies you're writing Python code, but you're actually writing ABC music notation.
+2. In the structure of your notation, you didn't indicate the end of the parts A and B in the verse. You should use the :| symbol to signal the end.
+3. The number 1 after some bars is not necessary.
+4. Spaces are preferable within bars, around every note, every rest and every bar line, except of course at the line ends. Here is a syntax corrected example.
+
+
+```ABC
+X: 1
+T: Dr. Beans
+C: Anonymous
+M: 4/4
+L: 1/8
+Q: 1/4=150
+K: Gm
+% Verse - Part A (Intro)
+|: "Gm" G2 G3 G2 B2 | "D7" A2 F2 F2 A2 | "Cm" G2 F2 G2 G2 G2 | "Eb" E2 E3 E2 B2 |
+"Gm" G2 G3 G2 B2 | "D7" A2 F2 F2 A2 | "Cm" G2 F2 G2 G2 A2 :| "Eb" E2 E4 ||  
+
+% Chorus
+|: "Gm" B2 B3 B2 d2 | "D7" B2 A2 A2 B2 | "Cm" c2 B2 c2 c2 c2 | "Eb" d2 d3 d2 c2 |
+"Gm" B2 B3 B2 d2 | "D7" B2 A2 A2 B2 | "Cm" c2 B2 c2 c2 A2 :| "Eb" d2 d4 ||
+
+% Verse - Part B
+|: "Gm" g2 g3 g2 B2 | "D7" A2 F2 F2 A2 | "Cm" G2 F2 G2 G2 G2 | "Eb" E2 E3 E2 B2 |
+"Gm" g2 g3 g2 B2 | "D7" A2 F2 F2 A2 | "Cm" G2 F2 G2 G2 A2 :| "Eb" E2 E4 ||
+
+% Bridge
+|: "Gm" B2 B3 d2 B2 | "D7" A2 F2 F2 A2 | "Cm" c2 B2 c2 c2 B2 | "Eb" d2 d3 E2 B2 |
+"Gm" B2 B3 d2 B2 | "D7" A2 F2 F2 A2 | "Cm" c2 B2 c2 c2 A2 :| "Eb" d2 d4 ||
+
+% Repeat from the top
+```
+
+Now, this format is clearer and easier to read while maintaining musical correctness.

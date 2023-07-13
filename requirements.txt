@@ -1,0 +1,4 @@
+openai
+python-dotenv
+music21
+midi2audio

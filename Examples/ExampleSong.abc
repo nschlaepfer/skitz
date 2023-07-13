@@ -1,0 +1,20 @@
+X: 1
+T: Jazz Robots Rap
+C: Generated Music 
+M: 4/4
+L: 1/8
+Q:1/8=160
+K:Cmaj
+V: V1 clef=treble name="Right Hand"
+"^Happy"(cE) | GCEG, C2 C2 | "^Rap rhythm"B,DGA, B,A,G,F, | "^Jazz progression"E2 C2 E2 C2 |
+w:"Robots on the key-boards, dropping the beats,"
+"^Syncopation"BAGF EDCB, | G,B,DG, B,G,F,E|  "^Chord transitions"E2 C2 E2 C2 |
+w:"Creating music that's hard to defeat."
+"^Inventive"A,B,CD EFGE | "^Happy ending"c2 C2 c2 C2 |
+w:"Happy they are, all in unique suite."
+V: V2 clef=bass name="Left Hand"
+"c drone"C,8 | z4 C,4 | "^Bass walk-down"c2 B,A,G,F, | "^C to E cmin"E4 z4 |
+"^Bass syncopation"c4 "^Syncopation"BAGF | "Low G chords"G,2 G,2 B,2 B,2 | E4 z4 |
+"^Bass ending"c4 c4 z4 |]
+w:"Robot tunes, play on repeat."
+Z: Generated Music for Piano
