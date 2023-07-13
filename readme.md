@@ -7,6 +7,12 @@ Skitz is a Python program that uses OpenAI's GPT-4 model to generate creative an
 
 Follow me on Twitter: [![Twitter Follow](https://img.shields.io/twitter/follow/nos_ult?label=Follow&style=social)](https://twitter.com/nos_ult)
 
+<p float="left">
+  <img src="https://github.com/nschlaepfer/skitz/assets/44988633/86f3796a-5bc1-41fa-9f14-138a5e882ade" width="609" alt="Screenshot 2023-07-13 at 3 36 55 PM" />
+  <img src="https://github.com/nschlaepfer/skitz/assets/44988633/52dc19f4-e15e-4d0a-a89f-d73633151695" width="428" alt="Screenshot 2023-07-13 at 3 37 56 PM" />
+</p>
+
+
 ## Table of Contents
 
 - [Pre-requisites](#pre-requisites)
