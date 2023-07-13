@@ -10,6 +10,8 @@ class Skitz:
     def __init__(self):
         # Load OpenAI API key from environment variables
         openai.api_key = os.getenv('OPENAI_API_KEY')
+        if openai.api_key is None:
+            raise ValueError("OpenAI API key not found in environment variables")
 
         # Check if directories exist, if not, create them
         self.base_path = os.path.dirname(os.path.abspath(__file__))
@@ -22,11 +24,15 @@ class Skitz:
         os.makedirs(self.generations_path, exist_ok=True)
 
         # Read instructions from file
-        with open(os.path.join(self.documentation_path, 'instructions.md'), 'r') as file:
-            self.instructions = file.read()
+        try:
+            with open(os.path.join(self.documentation_path, 'instructions.md'), 'r') as file:
+                self.instructions = file.read()
+        except FileNotFoundError:
+            raise FileNotFoundError("Instructions file not found")
 
         # Load inspiration content
         self.inspiration = self.load_inspiration()
+
 
     def load_inspiration(self):
         # Load inspiration from file if it exists, otherwise return an empty string
@@ -83,7 +89,6 @@ class Skitz:
 
     def compose_song(self, user_instructions):
         prompt = f"# ABC Player Specification\n\nUse these instructions to complete the request only respond with ABC format:\n\n{user_instructions}\n\nInspiration:\n{self.inspiration}"
-        promptNO = f"When you see a set of prompts asking for details like the genre, tempo, lyrics, chord progression, length, structure, mood, story, key, meter, note length, composer, and title of a song, use these inputs to generate a song in ABC Syntax. Use the given inputs to decide the nature of the melody, rhythm, and lyrics. Take care to respect the specific requirements provided, such as the desired emotion or the story that needs to be told through the song. Ensure that the structure is followed (if specified), and that the result is in accordance with the specified key and meter. Reflect the desired length in the overall structure and progression of the song. Place the specified composer's name and the song title appropriately in the ABC notation.   \n\nInspiration:\n{self.inspiration} \n\n{user_instructions}"
 
         try:
             response = openai.ChatCompletion.create(
@@ -172,7 +177,7 @@ class Skitz:
             "\nPlease enter the default length of a note: ",
             "\nPlease enter the composer of the song: ",
             "\nPlease enter the title of the song: ",
-            "\nDo you want to perform a quality check on the output? (yes/no): ",
+            "\nDo you want to perform a quality check on the output? Recomended (HIGHER API COST)(yes/no): ",
         ]
 
     
@@ -236,5 +241,8 @@ class Skitz:
 
 
 if __name__ == "__main__":
-    skitz = Skitz()
-    skitz.generate_song()
+    try:
+        skitz = Skitz()
+        skitz.generate_song()
+    except Exception as e:
+        print(f"An error occurred: {e}")
