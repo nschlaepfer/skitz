@@ -1,10 +1,23 @@
-Sure! Here's an improved layout for your images and text:
 
 # 🎵 Skitz Music Generator 🎵
 
 Skitz is a Python program that uses OpenAI's GPT-4 model to generate creative and original music based on user inputs. 🎼🎹🎷🎸
 
-![Screenshot](https://github.com/nschlaepfer/skitz/assets/44988633/3af3eeea-814d-4ce0-9244-5754ef44fe10)
+[![Nos_ult's GitHub stats](https://github-readme-stats.vercel.app/api?username=nos_ult)](https://github.com/nos_ult/github-readme-stats)
+
+Follow me on Twitter: [![Twitter Follow](https://img.shields.io/twitter/follow/nos_ult?label=Follow&style=social)](https://twitter.com/nos_ult)
+
+## Table of Contents
+
+- [Pre-requisites](#pre-requisites)
+- [Setup](#setup)
+- [How to Use Skitz Music Generator](#how-to-use-skitz-music-generator)
+- [Interactive Song Creation Guide](#interactive-song-creation-guide)
+- [Future Features](#future-features)
+- [Issues](#issues)
+- [Contributing](#contributing)
+- [Citation](#citation)
+- [License](#license)
 
 ## 🚀 Pre-requisites
 
@@ -19,82 +32,64 @@ Before you begin, ensure you have met the following requirements:
 
 ## ⚙️ Setup
 
-The setup process involves creating a virtual environment, installing necessary Python packages, and setting up your OpenAI API key.
+![Setup Guide GIF](path/to/setup_guide.gif)
 
-### Virtual Environment Setup
-
-To create a virtual environment, follow the steps based on your operating system.
-
-#### Windows
-
-```bash
-python -m venv env
-.\env\Scripts\activate
-```
-
-#### MacOS/Linux
-
-```bash
-python3 -m venv env
-source env/bin/activate
-```
-
-If you're done working in the virtual environment for the moment, you can deactivate it with:
-
-```bash
-deactivate
-```
-
-### 📚 Install Required Packages
-
-Once you have your virtual environment set up and activated, you can install the necessary Python packages by navigating to the project's root directory (where `requirements.txt` is located) and running:
-
-```bash
-pip install -r requirements.txt
-```
-
-### 🔐 Setting Up OpenAI API Key
-
-After you have installed the necessary packages, you will need to set up your OpenAI API Key.
-
-Create a new file named `.env` in the project root directory. Then open the file and write:
-
-```bash
-OPENAI_KEY=Your_OpenAI_API_Key
-```
-
-Replace `Your_OpenAI_API_Key` with the API key you obtained from OpenAI.
-
-**Note: Make sure not to share or upload this file to public repositories for your security.**
+The setup process involves creating a virtual environment, installing necessary Python packages, and setting up your OpenAI API key. Detailed instructions can be found [here](path/to/setup_instructions.md).
 
 ## 🎼 How to Use Skitz Music Generator
 
 After you've set up your environment, installed the required packages, and set up your API key, you're ready to generate some music! 🎉
 
-To run Skitz, navigate to the project directory and run the Python script `main.py`:
+![How to use Guide GIF](path/to/how_to_use_guide.gif)
 
-```bash
-python main.py
-```
+To run Skitz, navigate to the project directory and run the Python script `main.py`. During the interaction, you'll have the option to provide ABC code from another song as inspiration.
 
-![Screenshot](https://github.com/nschlaepfer/skitz/assets/44988633/a75fbe82-e97e-476a-9827-c8296c96b242)
+Detailed instructions can be found [here](path/to/how_to_use_guide.md).
 
-Follow the interactive prompt in your terminal to generate your music. You can choose between Easy and Advanced mode based on your familiarity with music theory and desired level of customization.
+## 🎹 Interactive Song Creation Guide
 
-After the program generates a song, it will save it as an ABC file in the `Generations` directory.
+Dive into the creative process and craft a unique piece of music with Skitz Music Generator! Use the questions below as a guide during your creation process. And remember, creativity knows no bounds! Experiment with different genres, themes, and structures. Your unique musical piece is just a few prompts away! 🎶
 
-To view and listen to your generated music, open the ABC file in Visual Studio Code with the ABC Tools extension installed. The extension will allow you to see the sheet music and convert it into a MIDI file.
+For more assistance, check out [ChatGPT](https://chat.openai.com/) from OpenAI.
+
+## 📈 Future Features
+
+Progress towards the next features can be tracked here:
+
+- [ ] Orchestra Composer (Big Update)
+- [ ] Better UI (Big Update)
+- [ ] Improvements to Prompts and Integration of Weights and Biases for Prompt Logging (Big Update)
+- [ ] In-House MIDI Conversion and ABC to MP3 Conversion (Small Update)
+- [ ] Auto Mode: Autonomously generate music based on genre and inspiration (Small Update)
 
 ## 🚨 Issues
 
-If you encounter any issues while working with the ABC code in VS Code, it could possibly be due to a syntax error. Please ensure that the code is written correctly.
+If you encounter any issues or have any questions, please refer to our [FAQ](path/to/faq.md) and [Troubleshooting](path/to/troubleshooting.md) guides. 
 
-In case the code still doesn't play in VS Code, you can try using the ABC Web Player by visiting the following link: [ABC Web Player](https://abc.rectanglered.com/). This web player allows you to play the ABC code and listen to the music generated.
+If your problem persists, please feel free to reach out for assistance.
 
-If you continue to face any difficulties or have any questions, please feel free to reach out for assistance.
 ## 💡 Contributing
 
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change. 🤝
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change. Detailed contribution guidelines can be found [here](path/to/contributing.md). 🤝
+
+We're always on the lookout for contributors, particularly those with a background in music. Please don't hesitate to get in touch!
+
+## 📝 Citation
+
+If you find this project useful for your research or if you use parts of this code, please consider citing it:
+
+```bibtex
+@misc{SkitzMusicGenerator,
+  author = {Your Name},
+  title = {Skitz: A Music Generator
+
+},
+  year = {2023},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/YourGithubUsername/Skitz}}
+}
+```
 
 ## 📝 License
 
