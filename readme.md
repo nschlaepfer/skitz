@@ -43,7 +43,7 @@ After you've set up your environment, installed the required packages, and set u
 
 ![How to use Guide GIF](path/to/how_to_use_guide.gif)
 
-To run Skitz, navigate to the project directory and run the Python script `main.py`. During the interaction, you'll have the option to provide ABC code from another song as inspiration.
+To run Skitz, navigate to the project directory and run the Python script `skitz.py`. During the interaction, you'll have the option to provide ABC code from another song as inspiration.
 
 Detailed instructions can be found [here](path/to/how_to_use_guide.md).
 
