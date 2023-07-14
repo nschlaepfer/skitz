@@ -1,0 +1,24 @@
+Your provided ABC notation output seems to be incorrect as per the ABC documentation due to a couple of errors. You have been utilising the '=' sign to lower a note, which is incorrect. Instead, you should use the symbol '_'. Also, some of your rhythm syntax is incorrectly written and symbols like "^" are applied to rest which is not necessary and incorrect. You didn't split the main and alternate endings with a line break, and also did not close the repeat tags properly. Here, I've corrected the given ABC notation:
+
+```
+X:1
+T:Compton Chronicles
+C:ABC Assistant
+M:4/4
+Q:1/4=93
+K:Gmin
+L:1/16
+% Intro
+z4  | "Gm"G,3A,B,2G,2 | "Cm7"C3D,E2C2 |  "D7"D3E,F2D2 |"Gm"G,3A,B,2G,2 :|
+% Verse
+"Gm"G,G,2 A,2A,2 | "Cm7"C,C,2 D,2D,2 |"D"D,3D,2F,2G,2 | "Gm"G,3G,2B,2A,2:|
+% Chorus
+"Cm7"D3C E3D | "D"F,3E, G,3F, | "Cm7"D3C E3D | "D"F,3G,2G,2F,2E,2:|
+% Bridge
+xFC |"Em7"G4 z2G2 | "Am7"A4 z2A2 | "Bb7"B4 z2B2 | "Cm7"C4 z2C2:|
+% Outro
+z4  | "Gm"G,3A,B,2G,2 | "Cm7"C3D,E2C2 |  "D7"D3E,F2D2 |"Gm"G,3A,B,2G,2 :| 
+%Repeat "Chorus" and "Verses" again
+```
+
+Please note that ABC notation might not fully reflect the complexities of a progressive jazz piece, and it is recommended to provide sheet music for performing musicians for best results.

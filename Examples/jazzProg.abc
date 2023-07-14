@@ -1,0 +1,29 @@
+Your ABC format song seems to be correct in terms of following the explicit ABC notation rules. However, the key changes mid-tune defined by K: features should be in a new line as indicated in the ABC documentation provided. Here is the corrected version of your piece:
+
+```ABC
+X:1
+T:Progressive Jazz Journey
+C:User name
+M:4/4
+L:1/8
+Q:1/4=120
+K:C
+"Am"ABce|"G"fede fa|\
+"C"eged cA|"F"f3e dc|\
+"G"BAGA GF|"Am"EDCD EC|\
+"Dm"ABAG Ac|"G"BAGF GE:|
+K:E
+M:5/4
+"Am"BcdcB G2|"F#m"A2 AB cB|
+"E"e2 ef f2|"B"B2 BA GABc|d2|
+K:G
+M:3/4
+"D"DEF GFE|"Bm"FED ABA|"G"GAG FGF|
+"Em"E2"Dm"D2|"A"AAG FED :|
+K:A
+M:4/4
+"C#m"efa "G#7"bag|"A"abc' bab|"F#m"aff fga|
+"D"EED "E"DCC|"Bm"B,2 B,2 B,A,|"E"E2 EF GABc|\
+"D"A2 D2 EF| GFGA B2A2||
+```
+Remember that this is a condensed representation of a 7-10 minutes piece, and the complexity that progressive jazz handles can't fully be depicted using ABC notation.

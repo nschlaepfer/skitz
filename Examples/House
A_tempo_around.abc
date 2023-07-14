@@ -1,0 +1,33 @@
+The provided output seems to be in the correct ABC syntax format, lining up with the desired requirements, including the 4/4 time signature, A minor key, and the appropriate rhythm through the use of eighth and quarter notes. 
+
+The corrected and formatted ABC notation is:
+
+```abc
+X:1
+T: Enjoy Life
+C: Nico
+M: 4/4
+L: 1/8
+Q:120
+K: Am
+% Verse
+|:"Am"E2 E2 E2 "D"F2 F2| "C"G2 G2 G2 "B"F2 F2 :|
+|:"Am"E2 E2 E2 "D"F2 F2| "C"G2 G2 G2 "B"F2 F2 :|
+% Chorus
+|:"F"E4 D4 |"C"G4 F4 :|
+|:"F"E4 D4 |"C"G4 F4 :|
+% Verse
+|:"Am"E2 E2 E2 "D"F2 F2| "C"G2 G2 G2 "B"F2 F2 :|
+|:"Am"E2 E2 E2 "D"F2 F2| "C"G2 G2 G2 "B"F2 F2 :|
+% Chorus
+|:"F"E4 D4 |"C"G4 F4 :|
+|:"F"E4 D4 |"C"G4 F4 :|
+% Bridge
+|"Am"E2 "E"B2 "D"F2 "D"A2 |"F"C2 "C"D2 "E"F2 "Am"A2 |
+|"F"E2 "F"D2 "C"G2 "B"A2 |"Am"G2 "F"D2 "E"C2 "B"A2 |
+% Chorus
+|:"F"E4 D4 |"C"G4 F4 :|
+|:"F"E4 D4 |"C"G4 F4 :|
+```
+
+Please note that ABC notation cannot represent all instrumental aspects of the described house music track, such as the bassline, synth melodies, and other elements mentioned. These elements should be added during the actual music production phase.

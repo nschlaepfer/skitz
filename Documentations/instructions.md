@@ -525,3 +525,40 @@ You probably find this much easier to read. There are two ways that the spacing 
 Putting spaces around the bar lines isn't required by ABC, but it really improves readability.
 We also aligned the notes and chords vertically in these two parallel lines of music. This makes the chords stand out somewhat from the notes, and makes it easier for a reader to associate the notes with the rhythm.
 A third, more subly thing that was done in both of the above examples was to make each phrase start a new line. This isn't always possible, just as it isn't with standard music notation, but when you can do it easily, you should.
+
+USING OTHER INSTRUMENTS LIKE THIS
+```plaintext
+X:1
+T:Last Day Ever
+C:Nico
+M:4/4
+L:1/4
+Q:1/4=110
+K:C
+%%staves {Trumpet Sax} {Piano} {Bass} {Drums}
+V:Trumpet clef=treble
+V:Sax clef=treble
+V:Piano clef=treble
+V:Bass clef=bass
+V:Drums clef=perc
+V:Trumpet
+^C^D^E ^F^G^A ^Bc2 | ^C^D^E ^F^G^A ^Bc2 |
+V:Sax
+^C^D^E ^F^G^A ^Bc2 | ^C^D^E ^F^G^A ^Bc2 |
+V:Piano
+[^C^D^E^F^G^A^Bc] z2 | [^C^D^E^F^G^A^Bc] z2 |
+V:Bass
+^C,2 ^D,2 | ^E,2 ^F,2 |
+V:Drums
+z4 | z4 |
+M:3/4
+^c^d^e ^f^g^a | ^b^c'2 |
+V:Sax
+^c^d^e ^f^g^a | ^b^c'2 |
+V:Piano
+[^c^d^e^f^g^a^b^c'] z | [^c^d^e^f^g^a^b^c'] z |
+V:Bass
+^C3 | ^D3 |
+V:Drums
+z3 | z3 |
+```

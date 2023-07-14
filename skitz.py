@@ -18,10 +18,12 @@ class Skitz:
         self.documentation_path = os.path.join(self.base_path, 'Documentations')
         self.inspiration_path = os.path.join(self.base_path, 'Inspirations')
         self.generations_path = os.path.join(self.base_path, 'Generations')
+        self.log_path = os.path.join(self.base_path, 'Logs')
 
         os.makedirs(self.documentation_path, exist_ok=True)
         os.makedirs(self.inspiration_path, exist_ok=True)
         os.makedirs(self.generations_path, exist_ok=True)
+        os.makedirs(self.log_path, exist_ok=True)
 
         # Read instructions from file
         try:
@@ -33,6 +35,8 @@ class Skitz:
         # Load inspiration content
         self.inspiration = self.load_inspiration()
 
+        # Initialize total tokens used
+        self.total_tokens = 0
 
     def load_inspiration(self):
         # Load inspiration from file if it exists, otherwise return an empty string
@@ -43,7 +47,8 @@ class Skitz:
         except FileNotFoundError:
             print("The inspiration file is not found, continuing with the program...")
             return ""
-
+        
+    
 
     def extract_markdown(self, song):
         # Split the song into lines
@@ -79,6 +84,8 @@ class Skitz:
                     {"role": "user", "content": prompt},
                 ]
             )
+            self.total_tokens += response['usage']['total_tokens']
+            self.log_messages(prompt, response.choices[0].message['content'])
         except openai.OpenAIError as e:
             print(f"\nAn error occurred: {e}")
             return None
@@ -98,6 +105,8 @@ class Skitz:
                     {"role": "user", "content": prompt},
                 ]
             )
+            self.total_tokens += response['usage']['total_tokens']
+            self.log_messages(prompt, response.choices[0].message['content'])
         except openai.OpenAIError as e:
             print(f"\nAn error occurred: {e}")
             return None
@@ -117,16 +126,18 @@ class Skitz:
 
     def write_abc_file(self, song, filename):
         os.makedirs("Generations", exist_ok=True)
+        original_filename = filename
+        counter = 2
+        while os.path.exists(os.path.join("Generations", filename)):
+            filename = f"{original_filename[:-4]}_{counter}.abc"
+            counter += 1
 
         filepath = os.path.join("Generations", filename)
-        if os.path.exists(filepath):
-            overwrite = input(f"\nA file with the name {filename} already exists. Do you want to overwrite it? (y/n): ")
-            if overwrite.lower() != 'y':
-                return
 
         with open(filepath, 'w') as file:
             file.write(song)
 
+        print(f"File saved as: {filename}")
         return filepath
 
     def convert_to_midi(self, abc_file, midi_file):
@@ -180,13 +191,17 @@ class Skitz:
             "\nDo you want to perform a quality check on the output? Recomended (HIGHER API COST)(yes/no): ",
         ]
 
-    
-
         for question in questions:
             answer = input(question)
             user_instructions_advanced += answer + "\n"
 
         return user_instructions_advanced.strip()
+
+    def log_messages(self, input_message, output_message):
+        # Create a new log file for each song
+        log_file = os.path.join(self.log_path, f'log_{self.total_tokens}.txt')
+        with open(log_file, 'w') as file:
+            file.write(f'Input: {input_message}\nOutput: {output_message}')
 
     def generate_song(self):
         print("\n")
@@ -203,6 +218,9 @@ class Skitz:
 
         """)
         print("\nWelcome to Skitz! This program will generate a song for you based on your input.")
+        print("Please note that this program is still in development and may not always work as intended.")
+        print("Please also note that this program uses the OpenAI API, which is a paid service. You will be charged for each request.")
+        print("If vscode wont run abc code, please visit to run online: https://abc.rectanglered.com")
         
         mode = input("Please select a mode: \n1. Easy \n2. Advanced\n")
         
@@ -214,6 +232,21 @@ class Skitz:
             print("Invalid mode selected. Please try again.")
             return
 
+        filepath = self.generate_song_with_same_instructions(user_instructions)
+
+        if filepath:
+            while True:
+                regenerate = input("\nDo you want to regenerate the song with the same instructions? (yes/no): ")
+                if regenerate.lower() == 'yes':
+                    filepath = self.generate_song_with_same_instructions(user_instructions)
+                elif regenerate.lower() == 'no':
+                    break
+                else:
+                    print("Invalid input. Please type 'yes' or 'no'.")
+        else:
+            print("\nFailed to generate a song. Please try again.")
+
+    def generate_song_with_same_instructions(self, user_instructions):
         print("\nGenerating your song. This may take a few moments...")
         song = self.compose_song(user_instructions)
 
@@ -221,23 +254,28 @@ class Skitz:
             print("\nFailed to generate a song. Please try again.")
             return
 
-        filename = f"{user_instructions[:20].replace(' ', '_')}.abc"
+        # Extract the title from the user instructions
+        lines = user_instructions.split('\n')
+        title_line = next((line for line in lines if line.startswith("Please enter the title of the song:")), None)
+
+        if title_line is not None:
+            # Extract the title from the line
+            title = title_line.split(":")[1].strip()
+
+            # Use the title as the filename (replacing spaces with underscores)
+            filename = f"{title.replace(' ', '_')}.abc"
+        else:
+            # If no title was found, fall back to the original filename
+            filename = f"{user_instructions[:20].replace(' ', '_')}.abc"
 
         filepath = self.write_abc_file(song, filename)
 
         if filepath:
             print(f"\nThe song has been written to: {filepath}")
-            # # Convert ABC to MIDI
-            # midi_file = filename.replace('.abc', '.midi')
-            # self.convert_to_midi(filepath, midi_file)
-
-            # # Convert MIDI to audio
-            # audio_file = filename.replace('.abc', '.mp3')
-            # self.convert_to_audio(midi_file, audio_file)
-
-            # print(f"\nThe song has been converted to audio and saved as: {audio_file}")
         else:
             print("\nFailed to write the song to a file. Please try again.")
+
+        return filepath
 
 
 if __name__ == "__main__":

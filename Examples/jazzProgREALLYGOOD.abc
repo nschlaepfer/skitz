@@ -1,0 +1,24 @@
+Your ABC notation output seems to be in the correct format. All the conventions expected in ABC notation such as tune headers(X:, T:, C:, M:, L:, Q:, K:), note lengths, keys, chords are present. However there are few minor corrections to be added:
+
+1. The grace notes need to be added inside {} brackets.
+
+2. The sharp notes should be indicated using ^ symbol only if it's not part of key signature. If it's part of key signature, just the note letter is enough. For example, ^f in the key of G Major should be just written as f, as F# is part of the key signature.
+
+Following these corrections, the fixed output would be:
+
+```abc
+X:1
+T:Progressive Jazz Journey
+C: (Insert Your Name Here with assistance from OpenAI's GPT-4)
+M:4/4
+L:1/8
+Q:1/4=120
+K:Cmaj
+V:1 clef=treble
+|: "Cmaj7" c2B2A2G2 | "Dm9" d2c2B2A2 | "Em7" e2f2g2g2 | "Fmaj9" fedcB2A2 |
+| "G13" GABc defg | "A7(b9)" agfe dcBA | "Bm7b5" BcdB efga | "E7(b9)" efge a2b2 |
+| "Am11" aece gece | "D7(#9)" dfAd gfed | "Gm9" GABc d3e | "C7(#9)" c2B2A2G2 | "Fmaj9" fedcB2A2 | "Bb13" Bcde f3g |
+| "Eb9" efge a2g2 | "Abmaj7#11" abcd' e2f2 :|
+| "Db7(#9)" d2c2B2A2 | "Gb13" gaba dcBA | "Bmaj7#11" Bbcd' e2f2 :|
+| "E9" ef^ga gfed | "Amaj7#5" abc' d'c'b2 | "D13" d'cba gab2 :|
+| "Gmaj7" gb{

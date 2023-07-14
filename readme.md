@@ -1,17 +1,12 @@
-# 🎵 Skitz Music Generator 🎵
+## 🎵 Skitz Music Generator 🎵
+Skitz is a Python program that uses OpenAI's GPT-4 model to generate creative and original music based on user inputs. It's important to note that the results can vary depending on the complexity and detail of your instructions. To get the best results, provide detailed instructions for the song you want to generate. If the output doesn't appear as expected, check the logs to see the chain of thought the model followed. Please be aware that using this program can be quite expensive due to the token usage of the GPT-4 model.🎼🎹🎷🎸
 
-Skitz is a Python program that uses OpenAI's GPT-4 model to generate creative and original music based on user inputs. 🎼🎹🎷🎸
 
-
-[![Nos_ult's GitHub stats](https://github-readme-stats.vercel.app/api?username=nschlaepfer)](https://github.com/nschlaepfer/github-readme-stats)
-
-Follow me on Twitter: [![Twitter Follow](https://img.shields.io/twitter/follow/nos_ult?label=Follow&style=social)](https://twitter.com/nos_ult)
 
 <p float="left">
   <img src="https://github.com/nschlaepfer/skitz/assets/44988633/86f3796a-5bc1-41fa-9f14-138a5e882ade" width="400" height="300" alt="Screenshot 2023-07-13 at 3 36 55 PM" />
   <img src="https://github.com/nschlaepfer/skitz/assets/44988633/52dc19f4-e15e-4d0a-a89f-d73633151695" width="400" height="300" alt="Screenshot 2023-07-13 at 3 37 56 PM" />
 </p>
-
 
 ## Table of Contents
 

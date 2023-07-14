@@ -1,0 +1,13 @@
+The given output is almost in the correct ABC syntax. Just a minor adjustment is needed to add an additional field for the genre. Here is the output with the correct ABC syntax:
+
+```
+X:1
+T:Journey through Sonic Landscapes
+C:User with assistance from OpenAI's GPT-4
+O:Progressive Jazz
+M:4/4
+L:1/8
+Q:1/4=120
+K:C
+|:"C"c3d efga|"G"g3a bc'ba|"F"f3g abc'b|"Dm"a3b c'bba|"G"g3a abag|"C"e4 -e2ef:|
+```
