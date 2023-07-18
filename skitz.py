@@ -125,20 +125,30 @@ class Skitz:
         return corrected_song
 
     def write_abc_file(self, song, filename):
-        os.makedirs("Generations", exist_ok=True)
-        original_filename = filename
+        # Determine full directory path without the filename
+        dir_path = os.path.join(self.generations_path, "/".join(filename.split("/")[:-1]))
+
+        # Create the directories if they do not exist
+        os.makedirs(dir_path, exist_ok=True)
+
+        # Prepare the filename, ensuring uniqueness
+        original_filename = filename.split("/")[-1]
         counter = 2
-        while os.path.exists(os.path.join("Generations", filename)):
-            filename = f"{original_filename[:-4]}_{counter}.abc"
+        while os.path.exists(os.path.join(dir_path, original_filename)):
+            original_filename = f"{original_filename[:-4]}_{counter}.abc"
             counter += 1
 
-        filepath = os.path.join("Generations", filename)
+        # Determine full file path
+        filepath = os.path.join(dir_path, original_filename)
 
+        # Write the song to the file
         with open(filepath, 'w') as file:
             file.write(song)
 
-        print(f"File saved as: {filename}")
+        print(f"File saved as: {filepath}")
         return filepath
+
+
 
     def convert_to_midi(self, abc_file, midi_file):
         # Convert ABC to MIDI using music21
