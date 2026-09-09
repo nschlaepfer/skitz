@@ -1,0 +1,11 @@
+{
+  "name": "skitz",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Subscription-backed music agent built on Prime Agent",
+  "scripts": {
+    "check": "uv run ruff check packages/skitz-music tests evals && uv run pytest && vendor/prime-agent/node_modules/.bin/tsgo --noEmit -p apps/cli/tsconfig.json && npm run check --prefix vendor/prime-agent",
+    "setup": "npm ci --prefix vendor/prime-agent && uv sync"
+  }
+}

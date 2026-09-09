@@ -1,0 +1,11 @@
+{
+  "id": "auggie-bach-2026-07-19",
+  "creator": "Auggie, Augmented Fifth (@aug5thmusic)",
+  "source": "https://aug5th.substack.com/p/the-bach-benchmark",
+  "published": "2026-07-19",
+  "summary": "Produce LilyPond for a Bach-style SATB chorale in G minor, triple quarter-note meter, pairing the upper voices on one staff and the lower voices on another.",
+  "prompt_policy": "Supply the original published prompt as a local file to run an exact reproduction. This summary is a paraphrase, not the original prompt.",
+  "conditions": ["single-response", "compiler-repair", "skitz-structured-score"],
+  "grading": ["notation compilation", "voice ranges", "parallel fifths and octaves", "voice crossings", "human harmony and phrase review"],
+  "claims": "Skitz is not an official implementation or an endorsement by the creator. Deterministic structural checks do not measure general musical quality."
+}

@@ -1,0 +1,1 @@
+- Disabled upstream CLI and interactive self-updates when launched by Skitz.

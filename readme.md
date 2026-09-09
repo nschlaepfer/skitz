@@ -1,103 +1,126 @@
-## 🎵 Skitz Music Generator 🎵
-Skitz is a Python program that uses OpenAI's GPT-4 model to generate creative and original music based on user inputs. It's important to note that the results can vary depending on the complexity and detail of your instructions. To get the best results, provide detailed instructions for the song you want to generate. If the output doesn't appear as expected, check the logs to see the chain of thought the model followed. Please be aware that using this program can be quite expensive due to the token usage of the GPT-4 model.🎼🎹🎷🎸
+# Skitz
 
+A terminal music agent built on Prime Agent. Sign in with your **ChatGPT
+subscription**, compose an editable score, render it, and make revisions that
+preserve protected tracks. No OpenAI API key is needed or used by the launcher.
 
+## Start
 
-<p float="left">
-  <img src="https://github.com/nschlaepfer/skitz/assets/44988633/86f3796a-5bc1-41fa-9f14-138a5e882ade" width="400" height="300" alt="Screenshot 2023-07-13 at 3 36 55 PM" />
-  <img src="https://github.com/nschlaepfer/skitz/assets/44988633/52dc19f4-e15e-4d0a-a89f-d73633151695" width="400" height="300" alt="Screenshot 2023-07-13 at 3 37 56 PM" />
-</p>
+Requires Python 3.11+, Node.js 22.8+, npm and uv. The complete pinned Prime source
+is included in `vendor/prime-agent`; no separate Prime installation is required.
 
-## Table of Contents
-
-- [Pre-requisites](#pre-requisites)
-- [Setup](#setup)
-- [How to Use Skitz Music Generator](#how-to-use-skitz-music-generator)
-- [Interactive Song Creation Guide](#interactive-song-creation-guide)
-- [Future Features](#future-features)
-- [Issues](#issues)
-- [Contributing](#contributing)
-- [Citation](#citation)
-- [License](#license)
-
-## 🚀 Pre-requisites
-
-Before you begin, ensure you have met the following requirements:
-
-- 💻 You have a compatible machine with Windows/MacOS/Linux operating system.
-- 🐍 You have Python 3.6+ installed. You can check your Python version by running `python --version` or `python3 --version` in the terminal.
-- 📦 You have `pip` installed. Pip is a package installer for Python and is included by default from Python 3.4 onwards. You can check the pip version by running `pip --version` or `pip3 --version` in the terminal.
-- 🔑 You have obtained an API Key from OpenAI. If you do not have an OpenAI API Key, you can obtain it from [OpenAI's API Key Request](https://platform.openai.com/signup). Make sure to securely store this API key as it will be needed during the setup.
-- 🎼 You have installed the Visual Studio Code extension [ABC Tools](https://marketplace.visualstudio.com/items?itemName=ishiharaf.abc-tools) for sheet music visualization and MIDI conversion.
-- 🎶 You have a basic understanding of music theory.
-
-## ⚙️ Setup
-
-![Setup Guide GIF](path/to/setup_guide.gif)
-
-The setup process involves creating a virtual environment, installing necessary Python packages, and setting up your OpenAI API key. Detailed instructions can be found [here](path/to/setup_instructions.md).
-
-## 🎼 How to Use Skitz Music Generator
-
-After you've set up your environment, installed the required packages, and set up your API key, you're ready to generate some music! 🎉
-
-![How to use Guide GIF](path/to/how_to_use_guide.gif)
-
-To run Skitz, navigate to the project directory and run the Python script `skitz.py`. During the interaction, you'll have the option to provide ABC code from another song as inspiration.
-
-Detailed instructions can be found [here](path/to/how_to_use_guide.md).
-
-## 🎹 Interactive Song Creation Guide
-
-Dive into the creative process and craft a unique piece of music with Skitz Music Generator! Use the questions below as a guide during your creation process. And remember, creativity knows no bounds! Experiment with different genres, themes, and structures. Your unique musical piece is just a few prompts away! 🎶 For more assistance, check out [ChatGPT](https://chat.openai.com/) from OpenAI.
-
-
-
-https://github.com/nschlaepfer/skitz/assets/44988633/0f0b56d3-0ec7-4ef1-9119-fa4764db1e6d
-
-
-
-Above is a sample of what skitz can do with proper prompting.
-
-## 📈 Future Features
-
-Progress towards the next features can be tracked here:
-
-- [ ] Orchestra Composer (Big Update)
-- [ ] Better UI (Big Update)
-- [ ] Improvements to Prompts and Integration of Weights and Biases for Prompt Logging (Big Update)
-- [ ] In-House MIDI Conversion and ABC to MP3 Conversion (Small Update)
-- [ ] Auto Mode: Autonomously generate music based on genre and inspiration (Small Update)
-
-## 🚨 Issues
-
-If you encounter any issues or have any questions, please refer to our [FAQ](path/to/faq.md) and [Troubleshooting](path/to/troubleshooting.md) guides. 
-
-If your problem persists, please feel free to reach out for assistance.
-
-## 💡 Contributing
-
-Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change. Detailed contribution guidelines can be found [here](path/to/contributing.md). 🤝
-
-We're always on the lookout for contributors, particularly those with a background in music. Please don't hesitate to get in touch!
-
-## 📝 Citation
-
-If you find this project useful for your research or if you use parts of this code, please consider citing it:
-
-```bibtex
-@misc{SkitzMusicGenerator,
-  author = {Nicolas W Schlaepfer},
-  title = {Skitz: A Music Generator
-
-},
-  year = {2023},
-  publisher = {GitHub},
-  journal = {GitHub repository},
-  howpublished = {\url{https://github.com/nschlaepfer/Skitz}}
-}
+```sh
+npm run setup
+uv run skitz doctor
+uv run skitz login
+uv run skitz agent
 ```
 
-## 📝 License
+`login` opens ChatGPT sign-in in your browser. Subscription eligibility, model
+availability and limits are controlled by OpenAI. Skitz stores its own OAuth
+session under `~/.skitz/agent`, separately from Codex and Prime. It never imports
+their credentials. Set `SKITZ_HOME` to use another Skitz state directory.
 
-[MIT](LICENSE)
+Example request:
+
+> Compose four bars for soprano, alto, tenor and bass in G minor and 3/4.
+> Protect the soprano. Validate, repair parallel fifths or octaves in the other
+> voices, and render a score and audio. Preserve all revisions.
+
+The initial model is Prime's pinned Codex default, `gpt-5.5`. Select another
+subscription model with `uv run skitz agent --model <model-id>` or `SKITZ_MODEL`.
+API-key providers and overrides are blocked. Prime's inherited help and TUI
+currently retain some upstream branding and provider menu entries; non-Codex
+provider calls are rejected in the runtime.
+
+## Music Tools
+
+```sh
+uv run skitz schema
+uv run skitz create my-piece score.json --protect soprano
+uv run skitz inspect my-piece
+uv run skitz validate my-piece
+uv run skitz analyze my-piece
+uv run skitz patch my-piece patch.json
+uv run skitz render my-piece --soundfont /path/to/GeneralUser-GS.sf2
+uv run skitz verify my-piece --require-audio
+uv run skitz export my-piece accepted-piece.zip
+```
+
+`uv run skitz demo demo-piece` creates a clearly labeled authored test fixture.
+`uv run skitz import imported-piece source.abc` imports supported ABC or
+uncompressed MusicXML. Unsupported constructs fail explicitly. Original Skitz
+scripts and documentation live in `legacy/`; original examples remain in `Examples/`.
+
+Scores use exact quarter-note fractions, spelled pitches, stable event IDs,
+monophonic tracks, fixed meter/tempo, explicit rests, ties and basic articulations.
+The canonical JSON revision is the source of truth. Edits currently support
+pitch, tie and articulation changes within named measures. Arbitrary DAW sessions,
+polyphonic track import, changing tempo/meter maps and lossless LilyPond import
+are not supported in this first version.
+
+## Rendering
+
+On macOS:
+
+```sh
+brew install lilypond fluid-synth
+```
+
+Provide a SoundFont you are licensed to use. See
+[GeneralUser GS](https://github.com/mrbumpy409/GeneralUser-GS) for a compatible
+option, its license and attribution. Skitz does not redistribute the SoundFont.
+Set `SKITZ_SOUNDFONT` or pass `--soundfont`. For only notation/MIDI, use `--no-audio`.
+For only source/MIDI/MusicXML, also use `--no-engrave`.
+
+Each render records the revision, tool versions, SoundFont hash, synthesis settings
+and artifact hashes. PDF/WAV rendering currently requires the tested macOS
+restricted-worker backend. Other platforms fail closed for these operations;
+source/MIDI/MusicXML operations remain available where dependencies work.
+Rendering failures return nonzero status and retained diagnostics.
+
+## Use From Codex
+
+Skitz exposes local MCP tools for creating projects, score inspection, validation,
+voice-leading analysis, bounded edits, revision comparison, rendering, rollback
+and export. Configure your MCP client to launch:
+
+```sh
+/absolute/path/to/skitz/.venv/bin/skitz mcp --workspace /absolute/path/to/music
+```
+
+For Codex, add this server to your own configuration:
+
+```toml
+[mcp_servers.skitz]
+command = "/absolute/path/to/skitz/.venv/bin/skitz"
+args = ["mcp", "--workspace", "/absolute/path/to/music"]
+```
+
+The MCP operations do not call a model or require authentication. Codex can use
+them through its own signed-in session. The repository also includes a discoverable
+Codex skill in `.agents/skills/skitz/` and a Python-backed Prime skill in
+`packages/skitz-music/`. No global Codex settings are changed by installation.
+
+## Checks and Benchmarks
+
+```sh
+npm run check
+uv run python evals/verify-editing.py work/editing-run --soundfont /path/to/font.sf2
+uv run skitz bench --condition single-response \
+  --prompt-file evals/bach-reproduction/paraphrased-prompt.txt --output work/bach-one-shot
+```
+
+Use a fresh output directory for each evaluation. Auggie's
+[Bach Benchmark](https://aug5th.substack.com/p/the-bach-benchmark) inspired the
+chorale tasks, notation feedback and voice-leading checks. The included prompt is
+an attributed paraphrase. Supply the original published prompt locally for an
+exact reproduction. Single-response, compiler-repair and structured Skitz runs
+are distinct conditions, not interchangeable results. See [evaluation](docs/evaluation.md).
+
+Prime's unrestricted agent kernel is not a security sandbox. Use trusted projects
+or an external restricted environment for the full agent. The notation/audio
+workers have separate restrictions; see [architecture](docs/architecture.md).
+
+MIT license for Skitz. Prime and inherited pi notices are retained in full; see
+[third-party notices](THIRD_PARTY_NOTICES.md) and [upstream provenance](docs/upstream.md).

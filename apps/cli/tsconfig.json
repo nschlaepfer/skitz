@@ -1,0 +1,7 @@
+{
+  "extends": "../../vendor/prime-agent/tsconfig.json",
+  "compilerOptions": {
+    "typeRoots": ["../../vendor/prime-agent/node_modules/@types"]
+  },
+  "include": ["*.ts"]
+}

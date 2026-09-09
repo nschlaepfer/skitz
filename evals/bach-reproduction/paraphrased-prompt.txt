@@ -1,0 +1,1 @@
+Compose a Bach-style chorale for soprano, alto, tenor and bass. Use G minor and 3/4 meter. Deliver complete LilyPond source with soprano and alto sharing the upper staff and tenor and bass sharing the lower staff.

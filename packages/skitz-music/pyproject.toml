@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "skitz-music"
+version = "0.1.0"
+description = "Editable music projects and verified revisions for the Skitz Prime Agent harness"
+requires-python = ">=3.11"
+dependencies = ["music21>=9.7,<10", "pydantic>=2.10,<3"]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.12,<2"]
+
+[project.scripts]
+skitz = "skitz_music.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/skitz_music"]
