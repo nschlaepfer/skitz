@@ -170,11 +170,24 @@ On macOS:
 brew install lilypond fluid-synth
 ```
 
-Provide a SoundFont you are licensed to use. See
-[GeneralUser GS](https://github.com/mrbumpy409/GeneralUser-GS) for a compatible
-option, its license and attribution. Skitz does not redistribute the SoundFont.
-Set `SKITZ_SOUNDFONT` or pass `--soundfont`. For only notation/MIDI, use `--no-audio`.
-For only source/MIDI/MusicXML, also use `--no-engrave`.
+For audio, install a SoundFont once:
+
+```sh
+uv run skitz soundfont install     # GeneralUser GS, ~32 MB, into ~/.skitz/soundfonts
+uv run skitz render my-piece        # PDF, MIDI, MusicXML, LilyPond and WAV
+uv run skitz play my-piece          # plays the newest audio render of HEAD
+```
+
+`soundfont install` fetches [GeneralUser GS](https://schristiancollins.com/generaluser.php)
+by S. Christian Collins from the author's
+[GitHub repository](https://github.com/mrbumpy409/GeneralUser-GS), pinned to one
+commit, and keeps it only if its size and SHA-256 match. Its license, saved next to
+it, allows use for private or commercial music. Skitz doesn't bundle the file.
+Renders use `--soundfont`, then `SKITZ_SOUNDFONT`, then the installed font. With
+none, audio is skipped with a hint (`audio_skipped`) rather than failing the render.
+An explicit `--soundfont` that doesn't exist fails. `skitz play <file>` plays any
+audio, and `--background` / `--stop` control playback. For only notation/MIDI, use
+`--no-audio`; for only source/MIDI/MusicXML, also use `--no-engrave`.
 
 Each render records the revision, tool versions, SoundFont hash, synthesis settings
 and artifact hashes. PDF/WAV rendering currently requires the tested macOS

@@ -14,6 +14,10 @@ def test_existing_state_overrides_survive_branding(tmp_path):
 
 def test_headless_missing_login_has_no_upstream_onboarding(monkeypatch):
     monkeypatch.setattr(harness, "doctor", lambda: {"subscription_configured": False})
+    # The launcher asks whether the ChatGPT sign-in works; keep the test independent of
+    # the machine's real sign-in.
+    monkeypatch.setattr(harness, "chatgpt_usable", lambda: False)
+    monkeypatch.setenv("SKITZ_PROVIDER", "codex")
     with pytest.raises(RuntimeError, match="skitz login"):
         harness.launch_agent(["-p", "compose a phrase"])
 

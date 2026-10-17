@@ -30,6 +30,7 @@ from music21 import (
 
 from .analysis import validate_score
 from .score import Score
+from .soundfonts import default_soundfont
 from .store import atomic_json
 
 
@@ -264,13 +265,24 @@ def render_score(
         except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
             manifest["errors"].append(str(exc))
     if audio:
-        sf = Path(soundfont or os.environ.get("SKITZ_SOUNDFONT", "")).expanduser()
+        # An explicit SoundFont must work; otherwise use SKITZ_SOUNDFONT or the installed
+        # default, and skip audio with a hint (not a failure) when there is none.
+        explicit = soundfont is not None
+        sf = Path(soundfont).expanduser() if explicit else default_soundfont()
         executable = shutil.which("fluidsynth")
-        if not sf.is_file() or not executable:
-            manifest["errors"].append(
-                "Audio requires FluidSynth and an explicit SoundFont via --soundfont or SKITZ_SOUNDFONT"
-            )
+        if sf is None or not executable or not sf.is_file():
+            if sf is None:
+                note = "Audio skipped: no SoundFont. Run `skitz soundfont install`."
+            elif not sf.is_file():
+                note = f"Audio failed: SoundFont not found at {sf}"
+            else:
+                note = "Audio skipped: FluidSynth is not installed (brew install fluid-synth)."
+            if explicit or (sf is not None and not sf.is_file()):
+                manifest["errors"].append(note)
+            else:
+                manifest["audio_skipped"] = note
         else:
+            manifest["soundfont"] = str(sf)
             manifest["soundfont_sha256"] = sha256(sf)
             manifest["fluidsynth_version"] = subprocess.run(
                 [executable, "--version"], capture_output=True, text=True, timeout=10
