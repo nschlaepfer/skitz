@@ -4,10 +4,12 @@
  * - Loader: a four-bar equalizer replaces the spinner while the agent works.
  * - Header: the animated SKITZ mark lives in the runtime's splash header
  *   (themes/skitz-shimmer.ts), because the daemon drops extension headers.
- * - Visualizer: while `skitz play` (or the agent) plays audio, live spectrum bars
- *   above the editor, drawn from the frames Python writes to ~/.skitz/playback.json.
- *   Extensions run in the session daemon, which forwards only plain widget lines, so
- *   the bars are re-sent about 12 times a second while audio plays.
+ * - Visualizer: while `skitz play` (or the agent) plays audio, a two-row strip (live
+ *   spectrum bars and the title with a clock) pinned right above the editor, drawn from
+ *   the frames Python writes to ~/.skitz/playback.json. It is a "pinned" widget, so in
+ *   fullscreen it stays in the fixed dock and never pushes the chat. Extensions run in
+ *   the session daemon, which forwards only plain widget lines, so the strip is re-sent
+ *   about 12 times a second while audio plays.
  *
  * Set SKITZ_ANIMATIONS=off to keep the stock screen.
  */
@@ -95,7 +97,14 @@ function truncate(text: string, width: number): string {
 	return text.length <= width ? text : `…${text.slice(text.length - width + 1)}`;
 }
 
-/** Widget lines for one moment of playback: 4 rows of bars and a title line. */
+/** Rows of bars in the visualizer strip; with the title line the strip is always this plus one. */
+export const VISUALIZER_BAR_ROWS = 1;
+
+/**
+ * Widget lines for one moment of playback: a row of bars and a title line. The count never
+ * changes during a song (bars stay, flat, when there are no frames), so the pinned strip by
+ * the editor keeps one height.
+ */
 export function visualizerLines(state: PlaybackState, now: number = Date.now()): string[] {
 	const frames = state.frames ?? [];
 	const elapsed = Math.min(now / 1000 - state.started_at, state.seconds ?? Number.POSITIVE_INFINITY);
@@ -103,7 +112,7 @@ export function visualizerLines(state: PlaybackState, now: number = Date.now()):
 	// Two columns per band: 64 columns for the usual 32 bands.
 	const wide = levels.flatMap((level) => [level, level]);
 	const title = `♪ ${truncate(state.title, 48)}  ${clock(elapsed)} / ${clock(state.seconds ?? 0)}`;
-	return [...(frames.length ? spectrumRows(wide, 4).map((row) => `  ${row}`) : []), `  \x1b[2m${title}\x1b[22m`];
+	return [...spectrumRows(wide, VISUALIZER_BAR_ROWS).map((row) => `  ${row}`), `  \x1b[2m${title}\x1b[22m`];
 }
 
 function debug(message: string): void {
@@ -137,7 +146,11 @@ export default function skitzVisuals(pi: ExtensionAPI) {
 				playing = id;
 				debug(`visualizer start ${state.title} frames=${state.frames?.length ?? 0}`);
 				if (draw) clearInterval(draw);
-				draw = setInterval(() => current?.ui.setWidget(VISUALIZER_KEY, visualizerLines(state)), 80);
+				// Pinned: the strip sits in the fixed area by the editor, outside the scrolling chat.
+				draw = setInterval(
+					() => current?.ui.setWidget(VISUALIZER_KEY, visualizerLines(state), { placement: "pinned" }),
+					80,
+				);
 			} else if (!state && playing) {
 				playing = undefined;
 				stopDrawing();

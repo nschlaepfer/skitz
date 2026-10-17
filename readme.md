@@ -260,9 +260,10 @@ audio, and `--background` / `--stop` control playback.
 
 The agent screen is music-themed. While the agent works, the spinner is a four-bar
 equalizer; the SKITZ mark shimmers in a magenta-to-cyan gradient; and whenever audio
-plays (`skitz play … --background`, or the agent playing a render), live spectrum
-bars appear above the editor. `skitz play <project|file> --visualize` shows the same
-bars in any terminal. The bars come from the audio itself: a Hann-window FFT in 32
+plays (`skitz play … --background`, or the agent playing a render), a two-row strip
+of live spectrum bars with the title and a clock is pinned right above the editor. It
+stays in the fixed area at the bottom, so the chat above never moves and stays
+readable. `skitz play <project|file> --visualize` shows taller bars in any terminal. The bars come from the audio itself: a Hann-window FFT in 32
 log-spaced bands at 20 fps, computed when playback starts (about 0.5 s for a
 3-minute song). The loader and visualizer are a Skitz extension
 (`apps/cli/skitz-visuals.ts`); the header shimmer lives in the runtime's splash

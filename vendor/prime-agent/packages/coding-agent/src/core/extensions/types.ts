@@ -82,8 +82,13 @@ export interface ExtensionUIDialogOptions {
 	timeout?: number;
 }
 
-/** Placement for extension widgets. */
-export type WidgetPlacement = "aboveEditor" | "belowEditor";
+/**
+ * Placement for extension widgets. "aboveEditor" and "belowEditor" widgets scroll with the
+ * transcript in fullscreen mode; "pinned" widgets stay in the fixed area right above the editor,
+ * so they never push the conversation around (use it for live status like a playback meter).
+ * Outside fullscreen, "pinned" renders right above the editor.
+ */
+export type WidgetPlacement = "aboveEditor" | "belowEditor" | "pinned";
 
 /** Options for extension widgets. */
 export interface ExtensionWidgetOptions {

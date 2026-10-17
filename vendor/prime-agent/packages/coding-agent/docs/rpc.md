@@ -1170,7 +1170,7 @@ Set or clear a widget (block of text lines) displayed above or below the editor.
 }
 ```
 
-Send `widgetLines: undefined` (or omit it) to clear the widget. The `widgetPlacement` field is `"aboveEditor"` (default) or `"belowEditor"`. Only string arrays are supported in RPC mode; component factories are ignored.
+Send `widgetLines: undefined` (or omit it) to clear the widget. The `widgetPlacement` field is `"aboveEditor"` (default), `"belowEditor"` or `"pinned"` (kept in the fixed area right above the editor in fullscreen, one row per line). Only string arrays are supported in RPC mode; component factories are ignored.
 
 #### setTitle
 

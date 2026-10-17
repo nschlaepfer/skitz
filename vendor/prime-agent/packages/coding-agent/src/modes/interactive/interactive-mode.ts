@@ -92,6 +92,7 @@ import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
+	WidgetPlacement,
 } from "../../core/extensions/index.js";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
 import { emptyGoalState, formatGoalUsage, GOAL_CONTEXT_PREVIEW_LABEL, type GoalState } from "../../core/goals.js";
@@ -715,12 +716,9 @@ function getPayloadNotifyType(payload: Record<string, unknown>, key: string): "i
 	return value === "info" || value === "warning" || value === "error" ? value : undefined;
 }
 
-function getPayloadWidgetPlacement(
-	payload: Record<string, unknown>,
-	key: string,
-): "aboveEditor" | "belowEditor" | undefined {
+function getPayloadWidgetPlacement(payload: Record<string, unknown>, key: string): WidgetPlacement | undefined {
 	const value = payload[key];
-	return value === "aboveEditor" || value === "belowEditor" ? value : undefined;
+	return value === "aboveEditor" || value === "belowEditor" || value === "pinned" ? value : undefined;
 }
 
 function getPayloadWorkingIndicatorOptions(
@@ -1108,8 +1106,11 @@ export class InteractiveMode {
 
 	private extensionWidgetsAbove = new Map<string, Component & { dispose?(): void }>();
 	private extensionWidgetsBelow = new Map<string, Component & { dispose?(): void }>();
+	private extensionWidgetsPinned = new Map<string, Component & { dispose?(): void }>();
 	private widgetContainerAbove!: Container;
 	private widgetContainerBelow!: Container;
+	/** Pinned widgets: part of the fixed prompt dock in fullscreen, not the scrolling transcript. */
+	private widgetContainerPinned!: Container;
 
 	// One-line recap of the agent's recent work, rendered just above the editor.
 	private recapContainer!: Container;
@@ -1175,6 +1176,7 @@ export class InteractiveMode {
 		this.featureHintContainer = new Container();
 		this.widgetContainerAbove = new Container();
 		this.widgetContainerBelow = new Container();
+		this.widgetContainerPinned = new Container();
 		this.recapContainer = new Container();
 		this.keybindings = KeybindingsManager.create();
 		setKeybindings(this.keybindings);
@@ -1507,6 +1509,7 @@ export class InteractiveMode {
 		for (const container of this.getPromptContextContainers()) {
 			this.mainContainer.addChild(container);
 		}
+		this.mainContainer.addChild(this.widgetContainerPinned);
 		this.mainContainer.addChild(this.editorContainer);
 		this.mainContainer.addChild(this.subagentSummaryLine);
 		this.mainContainer.addChild(this.widgetContainerBelow);
@@ -3596,6 +3599,7 @@ export class InteractiveMode {
 
 		removeExisting(this.extensionWidgetsAbove);
 		removeExisting(this.extensionWidgetsBelow);
+		removeExisting(this.extensionWidgetsPinned);
 
 		if (content === undefined) {
 			this.renderWidgets();
@@ -3607,7 +3611,9 @@ export class InteractiveMode {
 		if (Array.isArray(content)) {
 			const container = new Container();
 			for (const line of content.slice(0, InteractiveMode.MAX_WIDGET_LINES)) {
-				container.addChild(new Text(line, 1, 0));
+				// A pinned widget keeps one row per line at any width (truncated, never wrapped),
+				// so the fixed area by the editor does not change height.
+				container.addChild(placement === "pinned" ? new TruncatedText(line, 1, 0) : new Text(line, 1, 0));
 			}
 			if (content.length > InteractiveMode.MAX_WIDGET_LINES) {
 				container.addChild(new Text(theme.fg("muted", "... (widget truncated)"), 1, 0));
@@ -3617,7 +3623,12 @@ export class InteractiveMode {
 			component = content(this.ui, theme);
 		}
 
-		const targetMap = placement === "belowEditor" ? this.extensionWidgetsBelow : this.extensionWidgetsAbove;
+		const targetMap =
+			placement === "belowEditor"
+				? this.extensionWidgetsBelow
+				: placement === "pinned"
+					? this.extensionWidgetsPinned
+					: this.extensionWidgetsAbove;
 		targetMap.set(key, component);
 		this.renderWidgets();
 	}
@@ -3629,8 +3640,12 @@ export class InteractiveMode {
 		for (const widget of this.extensionWidgetsBelow.values()) {
 			widget.dispose?.();
 		}
+		for (const widget of this.extensionWidgetsPinned.values()) {
+			widget.dispose?.();
+		}
 		this.extensionWidgetsAbove.clear();
 		this.extensionWidgetsBelow.clear();
+		this.extensionWidgetsPinned.clear();
 		this.renderWidgets();
 	}
 
@@ -3670,9 +3685,10 @@ export class InteractiveMode {
 	private static readonly MAX_WIDGET_LINES = 10;
 
 	private renderWidgets(): void {
-		if (!this.widgetContainerAbove || !this.widgetContainerBelow) return;
+		if (!this.widgetContainerAbove || !this.widgetContainerBelow || !this.widgetContainerPinned) return;
 		this.renderWidgetContainer(this.widgetContainerAbove, this.extensionWidgetsAbove, true, true);
 		this.renderWidgetContainer(this.widgetContainerBelow, this.extensionWidgetsBelow, false, false);
+		this.renderWidgetContainer(this.widgetContainerPinned, this.extensionWidgetsPinned, false, false);
 		this.ui.requestRender();
 	}
 
@@ -7310,7 +7326,7 @@ export class InteractiveMode {
 	}
 
 	private getPromptDockComponents(): Component[] {
-		return [this.editorContainer, this.subagentSummaryLine, this.footerSlot];
+		return [this.widgetContainerPinned, this.editorContainer, this.subagentSummaryLine, this.footerSlot];
 	}
 
 	/** Enter or leave fullscreen rendering without touching the persisted setting. */
