@@ -69,16 +69,40 @@ def test_guided_login_opens_pages_and_retries(home, monkeypatch):
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     answers = iter(["", "__client_uat=1", VALID])
     opened = []
-    result = auth_cli.login_suno(None, T, prompt=lambda _: next(answers), open_url=opened.append)
+    result = auth_cli.login_suno(
+        None, T, prompt=lambda _: next(answers), open_url=opened.append, clipboard=lambda: ""
+    )
     assert result["status"] == "connected"
     assert opened == [auth_cli.SUNO_SIGN_IN, auth_cli.SUNO_COOKIE_PAGE]
+
+
+def test_enter_reads_a_long_value_from_the_clipboard(home, monkeypatch):
+    # A real __client value is longer than the 1024-byte terminal line limit.
+    long_value = "eyJ" + "x" * 1500 + ".sig"
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    answers = iter(["", ""])  # Enter after signing in, Enter instead of pasting
+    seen = []
+
+    def check(cookie):
+        seen.append(cookie)
+        return VALID
+
+    monkeypatch.setattr(auth_cli, "normalize_suno_cookie", lambda raw: f"__client={check(raw)}")
+    result = auth_cli.login_suno(
+        None, T, prompt=lambda _: next(answers), open_url=lambda _: None,
+        clipboard=lambda: long_value,
+    )  # fmt: skip
+    assert result["status"] == "connected"
+    assert seen == [long_value]
 
 
 def test_guided_login_gives_up_after_three_tries(home, monkeypatch):
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     answers = iter(["", "short", "short", "short"])
     with pytest.raises(suno.SunoError) as error:
-        auth_cli.login_suno(None, T, prompt=lambda _: next(answers), open_url=lambda _: None)
+        auth_cli.login_suno(
+            None, T, prompt=lambda _: next(answers), open_url=lambda _: None, clipboard=lambda: ""
+        )
     assert error.value.kind == "auth_missing"
     assert not (home / "suno/cookie").exists()
 
