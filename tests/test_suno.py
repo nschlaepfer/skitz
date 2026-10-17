@@ -273,3 +273,11 @@ def test_mcp_server_lists_suno_tools(tmp_path):
                 } <= names
 
     asyncio.run(check())
+
+
+def test_downbeats_infer_the_meter():
+    waltz = {"downbeats": [[0.5 * i, float(i % 3 + 1)] for i in range(12)]}
+    assert suno.tempo_from_downbeats(waltz)["beats_per_bar"] == 3
+    assert suno.tempo_from_downbeats(waltz)["bpm"] == 120.0
+    four = {"downbeats": [[0.5 * i, float(i % 4 + 1)] for i in range(16)]}
+    assert suno.tempo_from_downbeats(four)["beats_per_bar"] == 4

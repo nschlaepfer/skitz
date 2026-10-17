@@ -131,12 +131,20 @@ def audio_source(clip: dict) -> tuple[str, str]:
     return url, ".mp3"
 
 
-def tempo_from_downbeats(data: Any, beats_per_bar: int = 4) -> dict:
-    """BPM and bar-1 offset from Suno's downbeats ([[seconds, beat_in_bar], ...])."""
+def tempo_from_downbeats(data: Any) -> dict:
+    """BPM, meter and bar-1 offset from Suno's downbeats ([[seconds, beat_in_bar], ...])."""
     beats = (data or {}).get("downbeats") if isinstance(data, dict) else None
-    times = [float(b[0]) for b in beats or [] if isinstance(b, list | tuple) and b]
+    beats = [b for b in beats or [] if isinstance(b, list | tuple) and b]
+    times = [float(b[0]) for b in beats]
     if len(times) < 2:
-        return {"bpm": None, "first_downbeat": None}
+        return {"bpm": None, "first_downbeat": None, "beats_per_bar": None}
+    # The meter is the most common highest beat number before each bar restarts at 1.
+    bar_lengths = [
+        int(float(prev[1]))
+        for prev, cur in zip(beats, beats[1:])
+        if len(prev) > 1 and len(cur) > 1 and float(cur[1]) == 1.0
+    ]
+    beats_per_bar = max(set(bar_lengths), key=bar_lengths.count) if bar_lengths else 4
     gaps = sorted(b - a for a, b in zip(times, times[1:]) if b > a)
     beat = gaps[len(gaps) // 2]
     first = next((float(b[0]) for b in beats if len(b) > 1 and float(b[1]) == 1.0), times[0])

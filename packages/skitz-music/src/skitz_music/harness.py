@@ -86,6 +86,21 @@ def agent_arguments(args: list[str]) -> list[str]:
     ]
 
 
+HEADLESS_MODES = {"json", "rpc", "acp", "daemon"}
+
+
+def headless(args: list[str]) -> bool:
+    """True when the agent cannot run an interactive sign-in (print or non-text modes)."""
+    if "-p" in args or "--print" in args or not sys.stdin.isatty():
+        return True
+    for i, arg in enumerate(args):
+        if arg.startswith("--mode="):
+            return arg.split("=", 1)[1] in HEADLESS_MODES
+        if arg == "--mode" and i + 1 < len(args):
+            return args[i + 1] in HEADLESS_MODES
+    return False
+
+
 def launch_agent(args: list[str]) -> int:
     if args and args[0] in {"update", "/update"}:
         raise ValueError("Skitz pins its Prime runtime; update it through a reviewed source import")
@@ -93,7 +108,7 @@ def launch_agent(args: list[str]) -> int:
     prepared = agent_arguments(args)
     informational = any(arg in {"--help", "-h", "--version", "-v"} for arg in args)
     if not informational and not doctor()["subscription_configured"]:
-        if "-p" in args or "--print" in args or "--mode" in args or not sys.stdin.isatty():
+        if headless(args):
             raise RuntimeError("Sign in with your ChatGPT subscription first: skitz login")
         if login() != 0:
             return 1

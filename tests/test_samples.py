@@ -163,3 +163,11 @@ def test_service_confines_paths(tmp_path, suno_clip):
         service.samples_layer("out.wav", [{"sample": "/etc/hosts", "at": 0, "unit": "second"}])
     result = service.samples_loops("songs/drums/Drums-clip1234.mp3", "samples/loops", bars=4)
     assert result["count"] == 2
+
+
+@pytest.mark.parametrize("placement", [{"at": -1, "unit": "second"}, {"at": 0, "repeat": 0}])
+def test_layer_rejects_negative_or_empty_placements(tmp_path, placement):
+    hit = tmp_path / "hit.wav"
+    samples.write_wav(hit, np.zeros((100, 2), dtype=np.float32))
+    with pytest.raises(ValueError, match="Placement"):
+        samples.layer(tmp_path / "x.wav", [{"sample": str(hit), **placement}], bpm=BPM, bars=1)
