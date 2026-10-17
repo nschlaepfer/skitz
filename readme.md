@@ -199,7 +199,16 @@ log-spaced bands at 20 fps, computed when playback starts (about 0.5 s for a
 3-minute song). The loader and visualizer are a Skitz extension
 (`apps/cli/skitz-visuals.ts`); the header shimmer lives in the runtime's splash
 (`themes/skitz-shimmer.ts`), because the session daemon doesn't forward extension
-headers. Set `SKITZ_ANIMATIONS=off` for the stock screen. For only notation/MIDI, use
+headers. Set `SKITZ_ANIMATIONS=off` for the stock screen.
+
+Behind it all, an animated ASCII gradient fills the screen, modeled on React Bits'
+[Gradient ASCII](https://reactbits.dev/backgrounds/gradient-ascii) background (horizon
+shape) and written from scratch for the terminal. Light falls from the top over a dark
+arched horizon in their default blues, drawn with ` =+xX0S8#@` from dim to bright, with
+drift, flicker and grain. It only fills empty space and fades out within about 14
+columns, and two rows, of any text, so messages sit in a clear pocket. It runs only in
+fullscreen mode (never in scrollback) at 8 fps, about 1 ms per frame.
+`SKITZ_BACKGROUND=off` turns off just the backdrop. For only notation/MIDI, use
 `--no-audio`; for only source/MIDI/MusicXML, also use `--no-engrave`.
 
 Each render records the revision, tool versions, SoundFont hash, synthesis settings

@@ -1,0 +1,1 @@
+- Fullscreen background painter: `TUI.setBackgroundPainter(painter, fps)` lets the app paint an animated backdrop into each fullscreen frame before overlays (inline rendering is never painted, so scrollback stays clean). Skitz uses it for an ASCII gradient field (themes/skitz-background.ts) that fills empty space and fades out around text; SKITZ_BACKGROUND=off disables it.

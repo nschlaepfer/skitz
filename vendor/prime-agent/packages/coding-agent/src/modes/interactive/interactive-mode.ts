@@ -137,6 +137,7 @@ import {
 import { type TruncationResult, truncateTail } from "../../core/tools/truncate.js";
 import { IS_SKITZ } from "../../product.js";
 import { PRIME_BUTTERFLY_LOGO } from "../../themes/prime-logo.js";
+import { SkitzBackground, skitzBackgroundEnabled } from "../../themes/skitz-background.js";
 import {
 	skitzAnimationsEnabled,
 	skitzShimmerLine,
@@ -1488,6 +1489,10 @@ export class InteractiveMode {
 			this.headerContainer.addChild(new Spacer(1));
 			if (IS_SKITZ && skitzAnimationsEnabled()) {
 				startSkitzShimmer(() => this.ui.requestRender());
+			}
+			if (IS_SKITZ && skitzBackgroundEnabled()) {
+				const backdrop = new SkitzBackground();
+				this.ui.setBackgroundPainter((frame, width, height) => backdrop.paint(frame, width, height));
 			}
 		} else {
 			// Quiet startup: skip the splash and surrounding padding entirely.
