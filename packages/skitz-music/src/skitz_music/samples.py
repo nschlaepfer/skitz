@@ -1567,6 +1567,40 @@ class SamplesService:
             raise ValueError(f"Unknown separation model {model}")
         return separate(self.path(source), self.path(output_dir), model, drumkit)
 
+    def samples_transcribe(
+        self,
+        source: str,
+        project: str,
+        stem: str | None = None,
+        bpm: float | None = None,
+        offset: float | None = None,
+        meter: str | None = None,
+        grid: int = 16,
+        tracks: int = 1,
+        line: str | None = None,
+        key: str | None = None,
+        title: str | None = None,
+        downbeats: str | None = None,
+        join_repeats: bool = False,
+    ) -> dict:
+        from .transcribe import transcribe
+
+        return transcribe(
+            self.path(source),
+            self.path(project),
+            stem=stem,
+            bpm=bpm,
+            offset=offset,
+            meter=meter,
+            grid=grid,
+            tracks=tracks,
+            line=line,
+            key=key,
+            title=title,
+            downbeats=self.path(downbeats) if downbeats else None,
+            join_repeats=join_repeats,
+        )
+
     def samples_slice(
         self, source: str, output_dir: str, start: float, end: float, name: str | None = None
     ) -> dict:
