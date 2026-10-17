@@ -59,6 +59,21 @@ def create_server(workspace: str) -> MCPServer:
     sampler = SamplesService(workspace)
     sample_descriptions = {
         "samples_info": "Length, peak, Suno-recorded BPM and an estimated BPM for an audio file.",
+        "samples_analyze": (
+            "Estimate tempo (bpm, confidence, half/double, first_beat), key/mode (with "
+            "Camelot code and runner-up keys) and a triad chord per bar. Every value is an "
+            "estimate from the signal, not listening: say so, and prefer recorded BPMs."
+        ),
+        "samples_fit": (
+            "Time-stretch audio to a target bpm and/or pitch-shift it to a target key (or by "
+            "semitones) without changing the other. Source bpm defaults to the recorded one, "
+            "else an estimate; source key to an estimate. The manifest records which, plus "
+            "tempo_ratio and pitch_ratio. Fitted files carry their new bpm for samples_loops."
+        ),
+        "samples_fx": (
+            "Run an effect chain over one file (a stem, a loop or a finished mix). chain is "
+            "an object like samples_layer fx, or a string like 'hp=80,comp=-20/3,limit'."
+        ),
         "samples_loops": (
             "Cut audio (e.g. a Suno mp3) into back-to-back loops of `bars` at `bpm`, or "
             "`every` seconds. BPM defaults to the one recorded by suno_generate(bpm=...)."
@@ -73,8 +88,17 @@ def create_server(workspace: str) -> MCPServer:
         ),
         "samples_layer": (
             "Mix samples onto a timeline into a new WAV, optionally over a base such as a "
-            "score render. Placements: {sample, at, unit: bar|beat|second, gain_db, repeat, "
-            "every}. Bars and beats are 0-based and need bpm."
+            "score render. Placements: {sample, at, unit: bar|beat|second, gain_db, pan "
+            "(-1..1), repeat, every, track, fx}. Bars and beats are 0-based and need bpm. fx "
+            "and master take {highpass: hz|{hz, slope}, lowpass, low_shelf: {hz, db}, "
+            "high_shelf, peak, compress: {threshold_db, ratio, attack_ms, release_ms, "
+            "makeup_db}, delay: {beats|seconds, feedback, mix}, reverb: wet|{wet, room}, "
+            "gain_db, pan, limit: true|{ceiling_db}}. End master with limit."
+        ),
+        "samples_export": (
+            "Write a samples_layer plan for Ableton Live or Logic Pro: the mix, 32-bit float "
+            "stems per track (start at 0 s, after fx, before master), the source samples, "
+            "and placements.mid with tempo and one MIDI track per stem."
         ),
     }
     for name, description in sample_descriptions.items():

@@ -144,3 +144,68 @@ cut points. Mixes that would clip are scaled to -1 dBFS and say so. Prompt Suno 
 isolated material ("drums only", "solo Rhodes chords", "no vocals") and put the tempo
 in `bpm`, so loops land on the bar grid. `estimated_bpm` is a rough estimate that
 can be off by double or half. Prefer the recorded BPM, or cut by `every` seconds.
+
+## Fitting, mixing and exporting samples
+
+Analyze a sample, fit it to the song's tempo and key, mix with effects, and hand the
+result to a DAW. Fitting and effects use Spotify's pedalboard, installed with the
+Skitz workspace (`pip install 'skitz-music[fx]'` elsewhere). Without it, `fit_sample`
+falls back to Rubber Band through ffmpeg; gain, pan and `limit` work without either.
+
+```python
+report = samples.analyze(mp3)  # tempo, key and chords; every section has "estimate": True
+report["tempo"]   # {"bpm": 92.0, "confidence": 0.8, "alternatives": [46.0, 184.0], "first_beat": 0.04}
+report["key"]     # {"key": "A minor", "camelot": "8A", "alternatives": [...], "confidence": ...}
+report["chords"]["progression"]  # ["Am", "F", "C", "G"], one major/minor triad per bar
+
+fitted = samples.fit_sample(mp3, "samples/keys", bpm=90, key="C minor")  # or semitones=-2
+samples.chop_loops(fitted["outputs"][0]["path"], "samples/keys-loops", bars=2)  # BPM carried
+samples.apply_fx("stems/song/vocals.wav", "fx/vocals.wav", "hp=120,comp=-20/3,reverb=0.15")
+
+plan = [
+    {"sample": loop, "at": 0, "repeat": 4, "every": 2, "fx": {"highpass": 40, "compress": -18}},
+    {"sample": hit, "at": 3, "unit": "beat", "pan": -0.3, "gain_db": -4,
+     "fx": {"delay": {"beats": 0.75, "feedback": 0.3, "mix": 0.25}, "reverb": 0.2}},
+]
+samples.layer("out/beat.wav", plan, bpm=90, bars=8, master={"compress": -14, "limit": True})
+samples.export_plan("out/beat-daw", plan, bpm=90, bars=8, master={"limit": True})
+```
+
+Every `analyze` result is an estimate from the signal, not listening. Say so when you
+report it, and prefer a BPM or key the user or Suno gave. Tempo can lock to double or
+half; `first_beat` is the strongest beat phase, not necessarily bar 1. Relative keys
+(C major and A minor) are easy to confuse, so check the `alternatives`. Chords are
+major/minor triads only, on a grid of one bar (`chord_beats` changes it).
+
+`fit_sample` changes tempo and pitch independently. Without `source_bpm` it uses the
+recorded Suno or fit BPM, then an estimate; without `source_key`, an estimate. The
+manifest's `estimated` list names any guessed input. Keys shift by -6 to +5
+semitones. Between major and minor it lands on the target's relative key (C major fit
+to D minor is F major, which shares D minor's notes), recorded as `key_relation`. The
+manifest records `tempo_ratio`, `length_ratio`, `semitones`, `pitch_ratio` and the
+engine. Loops stay exact: the output is input length / tempo ratio.
+
+Effects take a dict or a chain string and always run in this order: `highpass` and
+`lowpass` (Hz, or `{hz, slope}` in 6/12/18/24 dB/octave), `low_shelf`/`high_shelf`
+`{hz, db, q}`, `peak` (one or a list of `{hz, db, q}`), `compress` (`{threshold_db,
+ratio, attack_ms, release_ms, makeup_db}`), `delay` (`{beats | seconds, feedback,
+mix}`), `reverb` (wet, or `{wet, room, damping, width, dry}`), `gain_db`, `pan`
+(-1 left to 1 right, balance law) and `limit` (`true` or `{ceiling_db, release_ms,
+lookahead_ms}`). `limit` is a lookahead brickwall: nothing passes `ceiling_db`
+(default -1 dBFS) and quieter material is untouched. The chain string form is
+`hp=120/24,lowshelf=200/-3,peak=1000/-4/2,comp=-18/4,delay=0.75q/0.3/0.25,reverb=0.2,pan=-0.5,limit`.
+
+Placement effects run on that placement's own lane, so tails carry across repeats.
+Its `gain_db` and `pan` then act as the fader. Placements that share a `track` name
+(default: the sample's file name) form one track. `master` runs on the sum. Manifests
+record every resolved stage with its defaults, the pedalboard version and the peak
+before safety scaling.
+
+`export_plan` writes `<name>.wav` (the mastered mix) and `stems/NN-<track>.wav`: 32-bit
+float, starting at 0 s, after placement effects and before the master, so they sum to
+the pre-master mix. It also copies the source samples to `samples/` and writes
+`placements.mid`, a type-1 MIDI file with the tempo, the time signature and one track
+of notes per stem. Notes default to C3 (60, as Ableton Live and Logic Pro number it),
+or set `note` per placement; velocity follows `gain_db`. In the DAW, set the project
+tempo and drop the stems at bar 1, or load `samples/` into a sampler and play them
+from the MIDI.

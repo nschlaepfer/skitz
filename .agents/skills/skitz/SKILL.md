@@ -37,4 +37,8 @@ To use Suno as a sample source, generate with a `bpm` (usually instrumental). Th
 cut the result with the `samples_*` MCP tools or `uv run skitz samples` (stems, loops,
 hits, slice, layer, info). `stems` splits a full mix on the local GPU into
 vocals/drums/bass/guitar/piano/other, and `--drumkit` splits drums into kit pieces. `layer` builds new WAVs from samples, optionally over a Skitz
-score render. Read `packages/skitz-music/SKILL.md` for the workflow.
+score render. `analyze` estimates BPM, key and chords: report them as estimates, never
+as listening. `fit` stretches and transposes a sample to a BPM and key, `fx` and
+`layer --fx/--master` add EQ, compression, delay, reverb and a limiter, and `export`
+writes stems plus MIDI for Ableton Live or Logic Pro. Read
+`packages/skitz-music/SKILL.md` for the workflow.
