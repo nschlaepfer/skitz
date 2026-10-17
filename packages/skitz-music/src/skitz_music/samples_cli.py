@@ -4,6 +4,7 @@ Every command prints one JSON object and writes WAVs plus a manifest. Needs ffmp
 Typical flow:
 
   skitz suno generate -i -t "dusty boom bap drums" --bpm 90 --out songs/drums
+  skitz samples stems songs/drums/<clip>.mp3 --drumkit --out stems/drums
   skitz samples loops songs/drums/<clip>.mp3 --bars 2 --out samples/drums
   skitz samples hits songs/drums/<clip>.mp3 --out samples/drum-hits
   skitz samples layer out/beat.wav --bpm 90 --bars 8 --place samples/drums/<loop>.wav:0:x4/2
@@ -72,6 +73,18 @@ def parser() -> argparse.ArgumentParser:
     hits.add_argument("--min-gap", type=float, default=0.08, help="Seconds between hits")
     hits.add_argument("--no-normalize", action="store_true")
 
+    stems = commands.add_parser("stems", help="Split audio into stems on the local GPU")
+    stems.add_argument("source")
+    stems.add_argument("-o", "--out", required=True)
+    stems.add_argument(
+        "-m", "--model", default="stems",
+        help="stems (6, default), 4stem, vocals, drumkit, or an audio-separator model file",
+    )  # fmt: skip
+    stems.add_argument(
+        "--drumkit", action="store_true", help="Also split drums into kick/snare/toms/hh/..."
+    )
+    stems.add_argument("--models", action="store_true", help="List presets and exit")
+
     cut = commands.add_parser("slice", help="Cut one region by seconds")
     cut.add_argument("source")
     cut.add_argument("start", type=float)
@@ -124,6 +137,12 @@ def run(args: argparse.Namespace) -> dict:
             args.min_gap,
             not args.no_normalize,
         )
+    if args.command == "stems":
+        from .separate import PRESETS, separate
+
+        if args.models:
+            return {"presets": PRESETS}
+        return separate(args.source, args.out, args.model, args.drumkit)
     if args.command == "slice":
         return samples.slice_sample(
             args.source, args.out, args.start, args.end, args.name, normalize=args.normalize

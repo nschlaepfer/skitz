@@ -55,6 +55,12 @@ def create_server(workspace: str) -> FastMCP:
         ),
         "samples_hits": "Detect transients and cut them into one-shot WAVs (drum hits, stabs).",
         "samples_slice": "Cut one region, in seconds, into a WAV.",
+        "samples_stems": (
+            "Split audio into stems on the local GPU (about 8 s per 30 s of audio per model). "
+            "model: stems (vocals/drums/bass/guitar/piano/other, default), 4stem, vocals, or "
+            "drumkit. drumkit=true also splits drums into kick/snare/toms/hh/ride/crash. "
+            "Stems keep the source's recorded BPM for samples_loops."
+        ),
         "samples_layer": (
             "Mix samples onto a timeline into a new WAV, optionally over a base such as a "
             "score render. Placements: {sample, at, unit: bar|beat|second, gain_db, repeat, "

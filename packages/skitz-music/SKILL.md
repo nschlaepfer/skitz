@@ -112,6 +112,24 @@ samples.layer(
 )
 ```
 
+To sample from a full mix, split it into stems first. This runs locally on the
+Apple GPU, at about 8 s per 30 s of audio per model:
+
+```python
+from skitz_music.separate import separate
+
+split = separate(mp3, "stems/song", drumkit=True)  # vocals drums bass guitar piano other
+kick = split["drumkit"]["stems"]["kick"]["path"]     # plus snare toms hh ride crash
+samples.chop_hits(kick, "samples/kicks", max_hits=8)
+samples.chop_loops(split["stems"]["bass"]["path"], "samples/bass", bars=2)  # BPM carried over
+```
+
+Presets: `stems` (BS-RoFormer SW, 6 stems, the default), `4stem` (HTDemucs,
+MIT-licensed), `vocals` (Mel-Band RoFormer) and `drumkit` (MDX23C DrumSep). A stem
+marked `silent` had nothing in it, for example vocals in an instrumental. The default
+checkpoint has no stated license, so treat its stems as personal-use. The first run
+downloads about 700 MB of weights to `~/.skitz/models/separation`.
+
 Placements are 0-based in `bar` (default with bpm), `beat` or `second` units. Each
 operation writes 16-bit, 44.1 kHz stereo WAVs plus a manifest with source hashes and
 cut points. Mixes that would clip are scaled to -1 dBFS and say so. Prompt Suno for

@@ -132,9 +132,17 @@ def _source_info(path: Path) -> dict:
 
 
 def suno_bpm(path: Path) -> float | None:
-    """BPM recorded by `skitz suno generate --bpm` in the clip's manifest, if any."""
+    """BPM recorded by `skitz suno generate --bpm`, directly or carried onto stems."""
     request = (_source_info(path).get("suno") or {}).get("request") or {}
-    return request.get("skitz_bpm")
+    if request.get("skitz_bpm"):
+        return request["skitz_bpm"]
+    separated = path.parent / "separate-manifest.json"
+    if separated.is_file():
+        try:
+            return json.loads(separated.read_text()).get("bpm")
+        except ValueError:
+            return None
+    return None
 
 
 def _onset_envelope(audio: np.ndarray, hop: int = 512, size: int = 2048) -> np.ndarray:
@@ -459,6 +467,17 @@ class SamplesService:
         return chop_hits(
             self.path(source), self.path(output_dir), sensitivity, max_hits, max_length
         )
+
+    def samples_stems(
+        self, source: str, output_dir: str, model: str = "stems", drumkit: bool = False
+    ) -> dict:
+        from .separate import PRESETS, separate
+
+        if "/" in model or (
+            model not in PRESETS and not model.endswith((".ckpt", ".yaml", ".onnx", ".pth"))
+        ):
+            raise ValueError(f"Unknown separation model {model}")
+        return separate(self.path(source), self.path(output_dir), model, drumkit)
 
     def samples_slice(
         self, source: str, output_dir: str, start: float, end: float, name: str | None = None

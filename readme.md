@@ -93,6 +93,7 @@ Suno clips can also be cut into samples and layered into new audio (needs ffmpeg
 ```sh
 uv run skitz suno generate -i -t "dusty boom bap drum break" --bpm 90 --out songs/drums
 uv run skitz samples info songs/drums/<clip>.mp3
+uv run skitz samples stems songs/drums/<clip>.mp3 --drumkit --out stems/drums
 uv run skitz samples loops songs/drums/<clip>.mp3 --bars 2 --out samples/drums
 uv run skitz samples hits songs/drums/<clip>.mp3 --max 16 --out samples/drum-hits
 uv run skitz samples layer out/beat.wav --bpm 90 --bars 8 \
@@ -102,12 +103,24 @@ uv run skitz samples layer out/beat.wav --bpm 90 --bars 8 \
 ```
 
 `--bpm` on `generate` adds the tempo to the Suno prompt and records it, so `loops`
-cuts on the bar grid without being told again. A placement is
+cuts on the bar grid without being told again. Stems carry that tempo too.
+
+`stems` separates a full mix locally on the Apple GPU through
+[python-audio-separator](https://github.com/nomadkaraoke/python-audio-separator),
+run in its own uv tool environment so PyTorch stays out of the Skitz venv. The
+default is BS-RoFormer SW, which outputs vocals, drums, bass, guitar, piano and
+other. It is the top single model for drums and bass on the
+[MVSEP leaderboard](https://mvsep.com/quality_checker/multisong_leaderboard).
+`--drumkit` adds MDX23C DrumSep: kick, snare, toms, hi-hat, ride and crash. On an
+M3 Max, 30 s of audio takes about 8 s per model. Other presets are `4stem` (HTDemucs,
+MIT-licensed) and `vocals` (Mel-Band RoFormer). The first run downloads about 700 MB
+of weights to `~/.skitz/models/separation`. The default checkpoint has no stated
+license, so treat its stems as personal-use. A placement is
 `SAMPLE:AT[b|q|s][:xREPEAT/EVERY][:GAINdB]`, in 0-based bars (default), beats (`q`)
 or seconds (`s`). `--plan` takes the same placements as JSON. Outputs are 16-bit
 44.1 kHz WAVs, each with a manifest of source hashes, cut points and settings. MCP
 clients get `samples_info`, `samples_loops`, `samples_hits`, `samples_slice` and
-`samples_layer`.
+`samples_layer` and `samples_stems`.
 
 ## Rendering
 

@@ -27,6 +27,7 @@ Suno credits; each generation makes 2 clips. If you get `captcha_required`,
 `auth_expired` or `out_of_credits`, stop and tell the user. Never work around a captcha.
 
 To use Suno as a sample source, generate with a `bpm` (usually instrumental). Then
-cut the result with the `samples_*` MCP tools or `uv run skitz samples` (loops, hits,
-slice, layer, info). `layer` builds new WAVs from samples, optionally over a Skitz
+cut the result with the `samples_*` MCP tools or `uv run skitz samples` (stems, loops,
+hits, slice, layer, info). `stems` splits a full mix on the local GPU into
+vocals/drums/bass/guitar/piano/other, and `--drumkit` splits drums into kit pieces. `layer` builds new WAVs from samples, optionally over a Skitz
 score render. Read `packages/skitz-music/SKILL.md` for the workflow.
