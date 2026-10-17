@@ -88,21 +88,27 @@ def tones(melody, seconds: float, start: float = 0.0, harmonics: int = 1, decay:
     return np.stack([audio, audio], axis=1)
 
 
+def pitch_of(event) -> str | None:
+    """The one pitch of an event in a monophonic line, or None for a rest."""
+    assert len(event.pitches) <= 1, event
+    return event.pitches[0] if event.pitches else None
+
+
 def events_of(score: Score, track: int = 0) -> list[tuple]:
-    return [(e.offset, e.duration, e.pitch, e.tie) for e in score.tracks[track].events]
+    return [(e.offset, e.duration, pitch_of(e), e.tie) for e in score.tracks[track].events]
 
 
 def notes_of(score: Score) -> list[tuple[Fraction, Fraction, str]]:
     """(onset, length, pitch) with tied events joined."""
     notes = []
     for event in score.tracks[0].events:
-        if event.pitch is None:
+        if not event.pitches:
             continue
         if event.tie in ("continue", "stop"):
             onset, length, name = notes[-1]
             notes[-1] = (onset, length + Fraction(event.duration), name)
         else:
-            notes.append((Fraction(event.offset), Fraction(event.duration), event.pitch))
+            notes.append((Fraction(event.offset), Fraction(event.duration), pitch_of(event)))
     return notes
 
 
@@ -130,7 +136,7 @@ def test_vocal_stem_becomes_an_editable_score(fake_transcriber, vocal_stem, tmp_
     score = Project(tmp_path / "projects/song-vocals").read()
     assert validate_score(score)["status"] == "passed"
     assert events_of(score) == EXPECTED
-    assert (score.meter, score.tempo, score.tracks[0].id, score.tracks[0].program) == (
+    assert (score.meter_map[0].meter, score.tempo_at(1), score.tracks[0].id, score.tracks[0].program) == (
         "4/4", 120, "vocals", 53,
     )  # fmt: skip
     assert score.key in {"F major", "D minor"}
@@ -166,7 +172,7 @@ def test_downbeats_set_tempo_offset_and_meter(fake_transcriber, tmp_path):
     )
     result = transcribe.transcribe(source, tmp_path / "waltz", downbeats=beats)
     score = Project(tmp_path / "waltz").read()
-    assert score.meter == "3/4" and score.tracks[0].id == "piano"
+    assert score.meter_map[0].meter == "3/4" and score.tracks[0].id == "piano"
     assert events_of(score) == [
         ("0", "1", "G4", None), ("1", "1", "A4", None), ("2", "1", "B4", None),
         ("3", "3", "C5", None), ("6", "3", None, None),
@@ -273,7 +279,7 @@ def test_line_events_fill_bars_and_tie_over_bar_lines():
     spell = transcribe.speller("C major")
     notes = [GridNote(1, 7, 60, 90), GridNote(8, 20, 64, 90)]
     events = transcribe.line_events("piano", notes, 4, 24, Fraction(1), spell)
-    assert [(e.offset, e.duration, e.pitch, e.tie) for e in events] == [
+    assert [(e.offset, e.duration, pitch_of(e), e.tie) for e in events] == [
         ("0", "1", None, None), ("1", "3", "C4", "start"), ("4", "3", "C4", "stop"),
         ("7", "1", None, None), ("8", "4", "E4", "start"), ("12", "4", "E4", "continue"),
         ("16", "4", "E4", "stop"), ("20", "4", None, None),
