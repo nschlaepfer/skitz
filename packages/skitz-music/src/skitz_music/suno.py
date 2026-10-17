@@ -47,7 +47,7 @@ DONE, FAILED = {"complete"}, {"error"}
 
 CAPTCHA_MESSAGE = (
     "Suno requires a captcha. A person must open suno.com, create one song by hand, "
-    "then retry. If it still fails, save a fresh cookie with `skitz suno login -`."
+    "then retry. If it still fails, reconnect with `skitz auth login suno`."
 )
 
 # Exit codes for `skitz suno`, so agents can tell who has to act.
@@ -92,7 +92,7 @@ def load_cookie() -> str:
     if not cookie:
         raise SunoError(
             "auth_missing",
-            f"No Suno cookie. Run `skitz suno login -` or set SUNO_COOKIE (file: {path}).",
+            f"Suno is not connected. Run `skitz auth login suno` (or set SUNO_COOKIE; file: {path}).",
         )
     return cookie
 
@@ -256,7 +256,7 @@ class SunoClient:
         if response.status_code in {401, 403, 404}:
             raise SunoError(
                 "auth_expired",
-                f"Suno rejected the session (HTTP {response.status_code}). Save a fresh cookie.",
+                f"Suno rejected the session (HTTP {response.status_code}). Reconnect with `skitz auth login suno`.",
             )
         if response.status_code >= 400:
             raise SunoError(
@@ -281,7 +281,10 @@ class SunoClient:
                 raise SunoError("auth_expired", "The cookie has no active Suno session.")
         jwt = self._clerk("POST", f"/v1/client/sessions/{self.session_id}/tokens").get("jwt")
         if not jwt:
-            raise SunoError("auth_expired", "Suno returned no session token. Save a fresh cookie.")
+            raise SunoError(
+                "auth_expired",
+                "Suno returned no session token. Reconnect with `skitz auth login suno`.",
+            )
         self._jwt, self._jwt_expiry = jwt, _jwt_expiry(jwt)
         return jwt
 
@@ -289,7 +292,9 @@ class SunoClient:
         headers = {"Authorization": f"Bearer {self.token()}"}
         response = self.http.request(method, f"{API_BASE}{path}", headers=headers, **kwargs)
         if response.status_code == 401:
-            raise SunoError("auth_expired", "Suno rejected the token. Save a fresh cookie.")
+            raise SunoError(
+                "auth_expired", "Suno rejected the token. Reconnect with `skitz auth login suno`."
+            )
         if response.status_code >= 400:
             body = response.text[:1000]
             lowered = body.lower()

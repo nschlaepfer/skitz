@@ -21,7 +21,9 @@ conventions as style-specific diagnostics and audio generation as rendering,
 not listening. The authored demo and deterministic evaluation are test fixtures,
 not model-generated music or a Bach Benchmark score.
 
-For finished, produced songs, use the `suno_*` MCP tools or `uv run skitz suno`
+Check connections with `uv run skitz auth --json` (Suno and ChatGPT). If Suno is not
+connected, ask the user to run `uv run skitz auth login suno`. It is guided, and you
+never handle the cookie. For finished, produced songs, use the `suno_*` MCP tools or `uv run skitz suno`
 (`--help` lists exit codes). They use the user's own Suno session cookie and spend
 Suno credits; each generation makes 2 clips. If you get `captcha_required`,
 `auth_expired` or `out_of_credits`, stop and tell the user. Never work around a captcha. Suno currently blocks audio downloads for API clients

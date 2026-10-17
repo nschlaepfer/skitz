@@ -85,7 +85,7 @@ Making stems needs a captcha in the web app, so never try to automate it.
 `suno.lyrics(prompt)` drafts lyrics without spending credits. Model aliases are
 `v6` (default), `v6-wild`, `v6-mini`, and the older `v5`, `v4.5+`, `v4.5` and `v4`. Errors are `SunoError` with a `kind`. Stop and
 tell the user on `auth_missing` or `auth_expired` (save a fresh cookie with
-`skitz suno login -`), `captcha_required` (create one song by hand on suno.com) or
+`skitz auth login suno`), `captcha_required` (create one song by hand on suno.com) or
 `out_of_credits`. Never try to solve or get around a captcha. On `timeout`, call
 `wait` again with the same ids. Suno audio is a separate artifact, not a revision of
 a Skitz score.

@@ -21,7 +21,6 @@ from .suno import (
     build_payload,
     download_stems,
     request_record,
-    save_cookie,
     slim,
     tempo_from_downbeats,
 )
@@ -34,8 +33,12 @@ def parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     commands = root.add_subparsers(dest="command", required=True)
-    login = commands.add_parser("login", help="Check a suno.com cookie and save it")
-    login.add_argument("cookie", help="The Cookie request header from suno.com, or - for stdin")
+    login = commands.add_parser("login", help="Connect your Suno account (guided)")
+    login.add_argument(
+        "cookie",
+        nargs="?",
+        help="__client value or cookie header; - reads stdin; omit to be guided",
+    )
     commands.add_parser("whoami", help="Check the session and show credits")
     models = commands.add_parser("models", help="List model aliases")
     models.add_argument("--live", action="store_true", help="Ask Suno which models you can use")
@@ -91,11 +94,10 @@ def run(args: argparse.Namespace, transport: httpx.BaseTransport | None = None) 
             return {"default": DEFAULT_MODEL, "live": SunoClient(transport=transport).live_models()}
         return {"default": DEFAULT_MODEL, "aliases": MODELS}
     if args.command == "login":
-        cookie = sys.stdin.read() if args.cookie == "-" else args.cookie
-        if not cookie.strip():
-            raise SunoError("usage", "Pass the cookie string, or - to read it from stdin.")
-        billing = SunoClient(cookie.strip(), transport).billing()
-        return {"status": "saved", "path": str(save_cookie(cookie)), **billing}
+        from .auth_cli import login_suno
+
+        value = None if args.cookie in (None, "-") else args.cookie
+        return login_suno(value, transport)
     if args.command == "generate":
         lyrics = Path(args.lyrics_file).read_text() if args.lyrics_file else args.lyrics
         payload = build_payload(

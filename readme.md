@@ -67,12 +67,12 @@ uses your suno.com web session and its private endpoints. These can change witho
 notice, and automating them may conflict with Suno's terms. Every generation spends
 your Suno credits.
 
-Log in at suno.com, then open `https://auth.suno.com/v1/client` in a new tab. In its
-DevTools, go to Application > Cookies > `https://auth.suno.com` and copy the `__client`
-value. Then pass it as `__client=<value>`:
+Connect your account once. The command opens the right pages and walks you through
+copying one cookie, then checks it with Suno before saving:
 
 ```sh
-read -rs C && printf '__client=%s' "$C" | uv run skitz suno login -
+uv run skitz auth login suno     # or: uv run skitz login suno
+uv run skitz auth                # status of Suno and ChatGPT
 uv run skitz suno whoami
 uv run skitz suno generate -d "warm lofi beat about rainy mornings" --out songs/rain
 uv run skitz suno generate --title "Night Drive" -t "synthwave, female vocals" \
