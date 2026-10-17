@@ -9,6 +9,7 @@ import {
 import {
 	COMPACTION_OUTCOME_CUSTOM_TYPE,
 	type CompactionOutcomeMessage,
+	HARNESS_STATE_UPDATE_CUSTOM_TYPE,
 	isCompactionOutcomeMessage,
 	isSessionSlashCommandResultMessage,
 	REFINEMENT_OUTCOME_CUSTOM_TYPE,
@@ -41,7 +42,8 @@ export function selectHeadlessTerminalResult(messages: readonly AgentMessage[]):
 		if (
 			message.role === "custom" &&
 			(message.customType === COMPACTION_OUTCOME_CUSTOM_TYPE ||
-				message.customType === REFINEMENT_OUTCOME_CUSTOM_TYPE)
+				message.customType === REFINEMENT_OUTCOME_CUSTOM_TYPE ||
+				message.customType === HARNESS_STATE_UPDATE_CUSTOM_TYPE)
 		) {
 			index--;
 			continue;

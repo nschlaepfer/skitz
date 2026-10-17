@@ -33,6 +33,7 @@ export const SESSION_SLASH_COMMAND_CUSTOM_TYPE = "session_slash_command";
 export const SESSION_SLASH_COMMAND_RESULT_CUSTOM_TYPE = "session_slash_command_result";
 export const COMPACTION_OUTCOME_CUSTOM_TYPE = "compaction_outcome";
 export const REFINEMENT_OUTCOME_CUSTOM_TYPE = "refinement_outcome";
+export const HARNESS_STATE_UPDATE_CUSTOM_TYPE = "harness_state_update";
 export const RLM_CHILD_FAILURE_CUSTOM_TYPE = "rlm_child_failure";
 export const RLM_CHILD_TERMINAL_NOTICE_CUSTOM_TYPE = "rlm_child_terminal_notice";
 export const ASYNC_BASH_COMPLETION_CUSTOM_TYPE = "async_bash_completion";
@@ -89,6 +90,23 @@ export interface RefinementOutcomeMessage extends CustomMessage<RefinementOutcom
 	customType: typeof REFINEMENT_OUTCOME_CUSTOM_TYPE;
 	content: string;
 	details: RefinementOutcomeDetails;
+}
+
+export interface HarnessStateUpdateDetails {
+	refinementId?: string;
+	/** The harness section as rendered now; this is what the message shows the model. */
+	section: string;
+	/**
+	 * The harness section of this conversation's system prompt. The prompt keeps it until the
+	 * next compaction, and a resumed session reads it back to render the same prompt.
+	 */
+	systemPromptSection: string;
+}
+
+export interface HarnessStateUpdateMessage extends CustomMessage<HarnessStateUpdateDetails> {
+	customType: typeof HARNESS_STATE_UPDATE_CUSTOM_TYPE;
+	content: string;
+	details: HarnessStateUpdateDetails;
 }
 
 export interface RlmChildFailureDetails {
@@ -391,6 +409,45 @@ export function createRefinementOutcomeMessage(
 		},
 		timestamp,
 	};
+}
+
+/**
+ * Model-visible notice that continual harness state changed mid-conversation. The system
+ * prompt is never re-rendered for this: the change is appended after the latest turn, so
+ * everything already sent (and the thinking signed against it) stays byte-identical.
+ */
+export function createHarnessStateUpdateMessage(
+	details: HarnessStateUpdateDetails,
+	summary?: string,
+	timestamp = Date.now(),
+): HarnessStateUpdateMessage {
+	const cause = details.refinementId
+		? `Refinement ${details.refinementId}${summary ? ` (${summary})` : ""} changed the continual harness state.`
+		: "The continual harness state changed.";
+	return {
+		role: "custom",
+		customType: HARNESS_STATE_UPDATE_CUSTOM_TYPE,
+		content: [
+			"<harness_state_update>",
+			cause,
+			'This section replaces the "Continual Harness State" section of the system prompt and of any earlier update. The rest of the system prompt is unchanged.',
+			"",
+			details.section,
+			"</harness_state_update>",
+		].join("\n"),
+		display: false,
+		details: { ...details },
+		timestamp,
+	};
+}
+
+export function isHarnessStateUpdateDetails(value: unknown): value is HarnessStateUpdateDetails {
+	return (
+		isRecord(value) &&
+		typeof value.section === "string" &&
+		typeof value.systemPromptSection === "string" &&
+		(value.refinementId === undefined || typeof value.refinementId === "string")
+	);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

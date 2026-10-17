@@ -175,16 +175,21 @@ import {
 	convertToLlm,
 	createAsyncBashCompletionMessage,
 	createCompactionOutcomeMessage,
+	createHarnessStateUpdateMessage,
 	createHeartbeatPromptMessage,
 	createRefinementOutcomeMessage,
 	createRlmChildFailureMessage,
 	createRlmChildTerminalNoticeMessage,
 	createSessionSlashCommandMessage,
 	createSessionSlashCommandResultMessage,
+	HARNESS_STATE_UPDATE_CUSTOM_TYPE,
+	type HarnessStateUpdateDetails,
 	HEARTBEAT_PROMPT_CUSTOM_TYPE,
 	HEARTBEAT_PROMPT_PREVIEW_LABEL,
 	IPYTHON_STATE_RESTORED_CUSTOM_TYPE,
+	isHarnessStateUpdateDetails,
 	isSessionSlashCommandMessage,
+	REFINEMENT_OUTCOME_CUSTOM_TYPE,
 	RLM_CHILD_FAILURE_CUSTOM_TYPE,
 	RLM_CHILD_TERMINAL_NOTICE_CUSTOM_TYPE,
 } from "./messages.js";
@@ -296,7 +301,12 @@ import {
 	type SlashCommandInfo,
 } from "./slash-commands.js";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.js";
-import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.js";
+import {
+	type BuildSystemPromptOptions,
+	buildSystemPrompt,
+	formatHarnessStateSection,
+	formatPromptDate,
+} from "./system-prompt.js";
 import { THINKING_LEVELS } from "./thinking-levels.js";
 import { acpMcpToolNames, createAcpMcpToolDefinitions } from "./tools/acp-mcp.js";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.js";
@@ -651,6 +661,15 @@ type QueuedSessionAction = SessionAction<PreparedTurnPayload | PreparedCommandPa
 interface PreparedPromptPreparation {
 	result: Awaited<ReturnType<ExtensionRunner["emitBeforeAgentStart"]>>;
 	basePromptSnapshot: string;
+}
+
+interface SystemPromptFrame {
+	/** Compaction entry the conversation restarts from, or null for the session start. */
+	startEntryId: string | null;
+	/** `Current date` of the conversation's system prompt. */
+	date: string;
+	/** Continual harness section of the conversation's system prompt. */
+	harnessSection: string;
 }
 
 class DeferredSessionInputError extends Error {}
@@ -1016,6 +1035,36 @@ function isPersistedRlmMaxDepthState(value: unknown): value is PersistedRlmMaxDe
 	);
 }
 
+/** Messages a finished refinement appends; they are not queued work. */
+function isRefinementNotice(message: AgentMessage): boolean {
+	return (
+		message.role === "custom" &&
+		(message.customType === REFINEMENT_OUTCOME_CUSTOM_TYPE || message.customType === HARNESS_STATE_UPDATE_CUSTOM_TYPE)
+	);
+}
+
+/** Prompt date of a conversation start: the earliest readable timestamp, or now when there is none. */
+function promptDateAt(...timestamps: Array<string | undefined>): string {
+	const times = timestamps
+		.map((timestamp) => (timestamp === undefined ? Number.NaN : new Date(timestamp).getTime()))
+		.filter((time) => !Number.isNaN(time));
+	return formatPromptDate(times.length > 0 ? new Date(Math.min(...times)) : new Date());
+}
+
+function harnessStateUpdatesIn(entries: readonly SessionEntry[]): HarnessStateUpdateDetails[] {
+	const updates: HarnessStateUpdateDetails[] = [];
+	for (const entry of entries) {
+		if (
+			entry.type === "custom_message" &&
+			entry.customType === HARNESS_STATE_UPDATE_CUSTOM_TYPE &&
+			isHarnessStateUpdateDetails(entry.details)
+		) {
+			updates.push(entry.details);
+		}
+	}
+	return updates;
+}
+
 function parseGoalBudgetValue(value: string): number {
 	if (!/^[1-9]\d*$/.test(value)) {
 		throw new Error("Goal token budget must be a positive integer.");
@@ -1282,6 +1331,16 @@ export class AgentSession {
 
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
+	/**
+	 * Inputs that would otherwise change between renders of the same conversation's system
+	 * prompt. Fixed from the conversation's start (session start or latest compaction) so
+	 * re-renders for tool or resource changes stay byte-identical; see `_promptFrameFor`.
+	 */
+	private _promptFrame: SystemPromptFrame | undefined;
+	/** Harness section the model saw last: the system prompt's, or the latest harness_state_update. */
+	private _deliveredHarnessSection: string | undefined;
+	/** Live loop context while a serialized refine checkpoint runs between turns of an agent run. */
+	private _serializedCheckpointContext: AgentContext | undefined;
 	private _assistantTurnsSinceAutoRefine = 0;
 	private _lastAutoRefineReviewAt = 0;
 	private _autoRefineInProgress = false;
@@ -2347,7 +2406,12 @@ export class AgentSession {
 			// Ensure the preceding message_end processing (counter increment,
 			// background plan kickoff) has completed before the checkpoint.
 			await this._agentEventQueue;
-			await this._runSerializedRefineCheckpoint();
+			this._serializedCheckpointContext = context.context;
+			try {
+				await this._runSerializedRefineCheckpoint();
+			} finally {
+				this._serializedCheckpointContext = undefined;
+			}
 		}
 		if (await this._shouldStopForThresholdCompaction(context)) {
 			return true;
@@ -2363,7 +2427,11 @@ export class AgentSession {
 			return false;
 		}
 
-		const lastMessage = this.agent.state.messages[this.agent.state.messages.length - 1];
+		// Refinement notices appended at the serialized checkpoint above are not queued work.
+		const messages = this.agent.state.messages;
+		let lastIndex = messages.length - 1;
+		while (lastIndex >= 0 && isRefinementNotice(messages[lastIndex]!)) lastIndex--;
+		const lastMessage = messages[lastIndex];
 		// A queued continuation disproves the assistant-last "task finished" heuristic, so preserve a true set above.
 		this._continueAfterThresholdCompaction ||= lastMessage !== undefined && lastMessage.role !== "assistant";
 		return true;
@@ -4494,6 +4562,7 @@ export class AgentSession {
 			loaderAppendSystemPrompt.length > 0 ? loaderAppendSystemPrompt.join("\n\n") : undefined;
 		const loadedSkills = this._modelVisibleSkills();
 		const loadedContextFiles = this._resourceLoader.getAgentsFiles().agentsFiles;
+		const frame = this._promptFrameFor(validToolNames, loadedSkills);
 
 		this._baseSystemPromptOptions = {
 			cwd: this._cwd,
@@ -4508,10 +4577,114 @@ export class AgentSession {
 			allowRecursion: this._rlmDepth < this._rlmMaxDepth,
 			rlmDepth: this._rlmDepth,
 			rlmParentAgent: this._rlmParentAgent,
-			harnessState: this._loadMergedHarnessState(),
+			harnessStateSection: frame.harnessSection,
+			currentDate: frame.date,
 			genericMcpServers: this._mcpManager?.getEnabledPersistentGenericServers(),
 		};
 		return buildSystemPrompt(this._baseSystemPromptOptions);
+	}
+
+	/**
+	 * The conversation's frame: its date and the harness section its system prompt carries.
+	 * A conversation starts at the session start or at the latest compaction on this branch.
+	 * A resumed session reads the frame back from the transcript: the start entry's date, and
+	 * the section the first harness_state_update after it recorded. Without such an update,
+	 * no refinement has changed the harness since the start, so the current state renders it.
+	 */
+	private _promptFrameFor(selectedTools: string[], skills: Skill[]): SystemPromptFrame {
+		if (this._promptFrame) return this._promptFrame;
+		const start = this._conversationStart();
+		const updates = harnessStateUpdatesIn(start.entries);
+		const harnessSection =
+			updates[0]?.systemPromptSection ??
+			formatHarnessStateSection(this._loadMergedHarnessState(), { selectedTools, skills });
+		this._promptFrame = { startEntryId: start.id, date: start.date, harnessSection };
+		this._deliveredHarnessSection = updates.at(-1)?.section ?? harnessSection;
+		return this._promptFrame;
+	}
+
+	/**
+	 * The latest compaction on the current branch, or the session start, and the entries after
+	 * it. A fork gets a new header but keeps the copied entries' timestamps, so the session
+	 * start is the earlier of the header and the first entry.
+	 */
+	private _conversationStart(): { id: string | null; date: string; entries: SessionEntry[] } {
+		const branch = this.sessionManager.getBranch();
+		for (let index = branch.length - 1; index >= 0; index--) {
+			const entry = branch[index]!;
+			if (entry.type === "compaction") {
+				return { id: entry.id, date: promptDateAt(entry.timestamp), entries: branch.slice(index + 1) };
+			}
+		}
+		return {
+			id: null,
+			date: promptDateAt(this.sessionManager.getHeader()?.timestamp, branch[0]?.timestamp),
+			entries: branch,
+		};
+	}
+
+	/**
+	 * Render the system prompt afresh at a new conversation start (after compaction). The
+	 * compacted turns are summarized, so no earlier request is replayed against the old prompt.
+	 */
+	private _startNewPromptFrame(): void {
+		this._promptFrame = undefined;
+		const oldBase = this._baseSystemPrompt;
+		this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+		this.agent.state.systemPrompt = this._refreshExtensionSystemPrompt(this.agent.state.systemPrompt, oldBase);
+	}
+
+	/** After moving to another branch, keep the frame when the branch starts at the same entry. */
+	private _syncPromptFrameToBranch(): void {
+		if (!this._promptFrame) return;
+		const start = this._conversationStart();
+		if (start.id !== this._promptFrame.startEntryId) {
+			this._startNewPromptFrame();
+			return;
+		}
+		this._deliveredHarnessSection =
+			harnessStateUpdatesIn(start.entries).at(-1)?.section ?? this._promptFrame.harnessSection;
+	}
+
+	/**
+	 * Tell the model about changed harness state without touching the system prompt: append a
+	 * harness_state_update after the latest turn. A serialized refine checkpoint runs between
+	 * turns of a live run, whose loop works on its own copy of the context, so the update also
+	 * goes there, at the same position.
+	 */
+	private _appendHarnessStateUpdate(result: RefinementResult): void {
+		const selectedTools = this.getActiveToolNames().filter((name) => this._toolRegistry.has(name));
+		const skills = this._modelVisibleSkills();
+		const frame = this._promptFrameFor(selectedTools, skills);
+		const section = formatHarnessStateSection(this._loadMergedHarnessState(), { selectedTools, skills });
+		if (section === this._deliveredHarnessSection) return;
+		const message = createHarnessStateUpdateMessage(
+			{ refinementId: result.id, section, systemPromptSection: frame.harnessSection },
+			result.summary,
+		);
+		try {
+			this.sessionManager.appendCustomMessageEntryWithRollback(
+				message.customType,
+				message.content,
+				message.display,
+				message.details,
+			);
+		} catch {
+			// Not in the session file, so context rebuilds would drop the update.
+			this._unpersistedOutcomes.push(message);
+		}
+		this._deliveredHarnessSection = section;
+		const messages = this.agent.state.messages;
+		const last = messages[messages.length - 1];
+		// A retry drops a trailing error message; keep the update in front of it.
+		if (last?.role === "assistant" && (last as AssistantMessage).stopReason === "error") {
+			messages.splice(messages.length - 1, 0, message);
+		} else {
+			messages.push(message);
+		}
+		this._serializedCheckpointContext?.messages.push(message);
+		this._emit({ type: "message_start", message });
+		this._emit({ type: "message_end", message });
 	}
 
 	private _refreshExtensionSystemPrompt(extensionPrompt: string, baseSnapshot: string): string {
@@ -7751,6 +7924,7 @@ export class AgentSession {
 		this.agent.state.messages = this.sessionManager.buildSessionContext().messages;
 		this._mergeUnpersistedOutcomes(this.agent.state.messages);
 		this._restoreLateIpythonSentAgentMessages();
+		this._startNewPromptFrame();
 
 		const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
 			| CompactionEntry
@@ -8578,8 +8752,9 @@ export class AgentSession {
 				if (!refinementAuditAppendError) throw error;
 			}
 			if (refinementAuditAppendError) throw refinementAuditAppendError.error;
-			this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
-			this.agent.state.systemPrompt = this._baseSystemPrompt;
+			// The system prompt stays as sent: re-rendering it here would invalidate every
+			// thinking block made so far. The new state is appended after the latest turn.
+			this._appendHarnessStateUpdate(result);
 			try {
 				this._emit({ type: "refine_complete", result });
 			} catch {
@@ -12032,6 +12207,7 @@ export class AgentSession {
 			this._mergeUnpersistedOutcomes(this.agent.state.messages);
 			this._restoreLateIpythonSentAgentMessages();
 			this._reloadGoalStateFromBranch();
+			this._syncPromptFrameToBranch();
 			this._reloadRlmMaxDepthFromBranch();
 			this._invalidateQueuedPromptPreparation();
 
