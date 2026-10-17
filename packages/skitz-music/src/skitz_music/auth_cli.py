@@ -7,17 +7,18 @@
   skitz auth logout suno     forget the saved Suno login
 
 ChatGPT uses OAuth in your browser. Suno has no sign-in for outside apps, so Skitz
-opens the right page and asks you to paste one cookie value, which it checks with
-Suno before saving it privately (mode 600). Add --json for machine-readable output.
+opens Suno's login page and watches your clipboard: press Cmd-A, Cmd-C on that page
+and it connects. The login is checked with Suno, then saved privately (mode 600).
+Add --json for machine-readable output.
 """
 
 import argparse
-import getpass
 import json
 import re
 import shutil
 import subprocess
 import sys
+import time
 import webbrowser
 from collections.abc import Callable
 
@@ -30,13 +31,14 @@ SUNO_COOKIE_PAGE = f"{suno.CLERK_BASE}/v1/client"
 
 SUNO_STEPS = f"""
 Connect Suno
-  1. Sign in at {SUNO_SIGN_IN} (opening it now).
-  2. Open {SUNO_COOKIE_PAGE} in Chrome (opening it next).
-     It shows a page of text; leave it.
-  3. On that tab open DevTools (Option-Cmd-I) > Application > Cookies >
-     {suno.CLERK_BASE}, click the row named exactly __client, and copy its value.
-  4. Come back here and press Enter: Skitz reads the value from your clipboard.
-     (It is too long to paste into a terminal prompt on macOS.)
+  On the page that just opened ({SUNO_COOKIE_PAGE}),
+  press Cmd-A then Cmd-C. Skitz is watching your clipboard and connects as soon
+  as you copy. Nothing to paste, no Enter.
+
+  Not working? Sign in at https://suno.com (sign out and back in if you already
+  are), reload that page and copy it again.
+
+Waiting for the copy... (Ctrl-C to cancel)
 """
 
 
@@ -47,9 +49,14 @@ def normalize_suno_cookie(text: str) -> str:
     if not value:
         raise ValueError("Nothing was pasted.")
     if value.startswith("{") or '"response"' in value:
+        # Right after a sign-in, Suno's login page embeds the __client value in its
+        # sign-in redirect URL, so copying the whole page is enough.
+        embedded = re.search(r"[?&]__client=([A-Za-z0-9._-]{20,})", value)
+        if embedded:
+            return f"__client={embedded[1]}"
         raise ValueError(
-            "That is the page text, not the cookie. Copy the __client value from DevTools > "
-            "Application > Cookies instead (and don't share that page text: it holds a token)."
+            "That copy of the page doesn't include your login. Sign out of suno.com, sign "
+            "back in, then reload the page and copy it again."
         )
     match = re.search(r"(?:^|;\s*)__client=([^;\s]+)", value)
     if match:
@@ -102,55 +109,70 @@ def chatgpt_status() -> dict:
     return {"provider": "chatgpt", "method": "OAuth", "connected": connected}
 
 
+def _check(raw: str, transport: httpx.BaseTransport | None) -> tuple[str, dict]:
+    """Normalize a copied value and confirm it with Suno; raises ValueError or SunoError."""
+    cookie = normalize_suno_cookie(raw)
+    try:
+        return cookie, suno.SunoClient(cookie, transport).billing()
+    except suno.SunoError as error:
+        if error.kind == "auth_expired":
+            error.message += " Sign out of suno.com, sign back in, and copy the page again."
+        raise
+
+
+def _connected(cookie: str, info: dict) -> dict:
+    return {
+        "status": "connected",
+        "provider": "suno",
+        "plan": info.get("plan"),
+        "credits": info.get("credits"),
+        "saved_to": str(suno.save_cookie(cookie)),
+    }
+
+
+def _looks_like_suno_login(text: str) -> bool:
+    return "__client" in text or '"response"' in text or bool(re.fullmatch(r"eyJ[\w.-]{20,}", text))
+
+
 def login_suno(
     value: str | None = None,
     transport: httpx.BaseTransport | None = None,
-    prompt: Callable[[str], str] = getpass.getpass,
     open_url: Callable[[str], object] = webbrowser.open,
     clipboard: Callable[[], str] = read_clipboard,
-    attempts: int = 3,
+    sleep: Callable[[float], None] = time.sleep,
+    timeout: float = 600,
 ) -> dict:
-    """Save a working Suno login. With `value`, no prompts; otherwise guide the user."""
+    """Save a working Suno login.
+
+    With `value` (or piped stdin) it is checked directly. Otherwise Skitz opens Suno's
+    login page and watches the clipboard until a copy of that page (or of the __client
+    cookie) shows up, so nothing has to be pasted into the terminal.
+    """
     if value is None and not sys.stdin.isatty():
         value = sys.stdin.read()
-    interactive = value is None
-    if interactive:
-        print(SUNO_STEPS, file=sys.stderr)
-        open_url(SUNO_SIGN_IN)
-        prompt("Press Enter once you are signed in to Suno... ")
-        open_url(SUNO_COOKIE_PAGE)
-    for attempt in range(1, attempts + 1):
-        if interactive:
-            # Terminals cap a typed line at 1024 bytes, shorter than the cookie, so a
-            # pasted value is silently cut off; pressing Enter reads the clipboard instead.
-            typed = prompt("Copy the __client value, then press Enter here: ")
-            raw = typed if typed.strip() else clipboard()
-        else:
-            raw = value
+    if value is not None:
         try:
-            cookie = normalize_suno_cookie(raw or "")
-            info = suno.SunoClient(cookie, transport).billing()
+            return _connected(*_check(value, transport))
         except ValueError as error:
-            problem = str(error)
+            raise suno.SunoError("auth_missing", str(error)) from None
         except suno.SunoError as error:
-            problem = error.message
-            if error.kind == "auth_expired":
-                problem += (
-                    f" Check that you copied __client from {suno.CLERK_BASE} while signed in."
-                )
-        else:
-            path = suno.save_cookie(cookie)
-            return {
-                "status": "connected",
-                "provider": "suno",
-                "plan": info.get("plan"),
-                "credits": info.get("credits"),
-                "saved_to": str(path),
-            }
-        if not interactive or attempt == attempts:
-            raise suno.SunoError("auth_missing", problem)
-        print(f"  {problem} Try again ({attempts - attempt} left).", file=sys.stderr)
-    raise AssertionError("unreachable")
+            raise suno.SunoError("auth_missing", error.message) from None
+
+    open_url(SUNO_COOKIE_PAGE)
+    print(SUNO_STEPS, file=sys.stderr)
+    deadline = time.monotonic() + timeout
+    seen = None
+    while time.monotonic() < deadline:
+        text = clipboard().strip()
+        if text and text != seen:
+            seen = text
+            if _looks_like_suno_login(text):
+                try:
+                    return _connected(*_check(text, transport))
+                except (ValueError, suno.SunoError) as error:
+                    print(f"  {getattr(error, 'message', error)}", file=sys.stderr)
+        sleep(0.5)
+    raise suno.SunoError("auth_missing", "Stopped waiting for the copy. Run the command again.")
 
 
 def logout_suno() -> dict:
