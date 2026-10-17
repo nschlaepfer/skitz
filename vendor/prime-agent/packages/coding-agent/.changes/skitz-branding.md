@@ -1,0 +1,1 @@
+- Added Skitz-specific terminal identity, splash mark, help and subscription-only configuration while preserving runtime environment names and existing auth storage.

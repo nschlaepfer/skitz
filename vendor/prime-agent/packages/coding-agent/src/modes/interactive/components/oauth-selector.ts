@@ -9,6 +9,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { AuthStatus, AuthStorage } from "../../../core/auth-storage.js";
 import { PRIME_INFERENCE_PROVIDER_ID } from "../../../core/prime-inference-auth.js";
+import { IS_SKITZ } from "../../../product.js";
 import { theme } from "../theme/theme.js";
 import {
 	getMenuListLayout,
@@ -119,7 +120,11 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 			title: options.title ?? (mode === "login" ? "Providers" : "Saved Credentials"),
 			subtitle:
 				options.subtitle ??
-				(mode === "login" ? "Connect with a subscription or API key." : "Choose a credential to remove."),
+				(mode === "login"
+					? IS_SKITZ
+						? "Connect your ChatGPT subscription."
+						: "Connect with a subscription or API key."
+					: "Choose a credential to remove."),
 		});
 		this.addChild(panel);
 		if (options.header) {

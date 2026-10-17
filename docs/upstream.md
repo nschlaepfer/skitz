@@ -15,6 +15,20 @@ Local upstream patches:
 2. `packages/coding-agent/src/cli-main.ts`: when `SKITZ_DISABLE_UPDATES=1`, refuse
    update commands before startup, including the child used by interactive `/update`.
 3. Corresponding package change fragments and the subscription regression test.
+4. `src/product.ts` and `src/config.ts`: Skitz presentation identity and project
+   configuration directory under `SKITZ_PRODUCT=1`; internal environment prefixes,
+   package names and protocol version remain upstream-compatible.
+5. `src/themes/prime-logo.ts` and `skitz-logo.ts`: choose the Skitz terminal mark
+   when launched as Skitz, preserving the upstream mark otherwise.
+6. `src/cli/command-registry.ts` and `node-version-check.ts`: product-specific help
+   and runtime-install guidance; unsupported API-key options are not advertised.
+7. `src/modes/interactive/onboarding.ts`, `auth-flows.ts`, `feature-hints.ts`,
+   `components/configuration-menu.ts` and `components/oauth-selector.ts`: skip
+   upstream onboarding, limit login/model menus to supported providers, use Skitz
+   labels and omit upstream trace-sharing promotion.
+8. Focused branding tests and a package change fragment.
+
+Paths in items 4-8 are relative to `packages/coding-agent/` in the snapshot.
 
 All other product code lives outside the imported runtime. Preserve inherited
 workspace package names, OAuth contracts and copyright notices. `npm ci` uses the

@@ -19,6 +19,7 @@ import {
 } from "../../core/prime-inference-auth.js";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.js";
 import { SERPER_CREDENTIAL_ID, SERPER_CREDENTIAL_NAME } from "../../core/websearch-credential.js";
+import { IS_SKITZ } from "../../product.js";
 import { showFullPaneOverlay } from "./components/centered-overlay.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
@@ -171,6 +172,10 @@ export class ProviderAuthFlows {
 	}
 
 	loginProvider(providerOption: AuthSelectorProvider): Promise<AuthenticationResult> {
+		if (IS_SKITZ && providerOption.id !== "openai-codex" && !providerOption.id.startsWith("mcp:")) {
+			this.host.showError("Skitz uses ChatGPT subscription sign-in.");
+			return Promise.resolve({ status: "failed" });
+		}
 		const kind = providerOption.category === "service" ? "service" : "provider";
 		if (providerOption.authType === "oauth") {
 			return this.showLoginDialog(providerOption.id, providerOption.name, kind);
@@ -265,7 +270,9 @@ export class ProviderAuthFlows {
 		});
 
 		const filteredOptions = authType ? options.filter((option) => option.authType === authType) : options;
-		return filteredOptions.sort(compareAuthSelectorProviders);
+		return filteredOptions
+			.filter((option) => !IS_SKITZ || option.id === "openai-codex" || option.id.startsWith("mcp:"))
+			.sort(compareAuthSelectorProviders);
 	}
 
 	private getLogoutProviderOptions(): AuthSelectorProvider[] {
@@ -509,6 +516,9 @@ export class ProviderAuthFlows {
 	}
 
 	async runPrimeInferenceLogin(): Promise<AuthenticationResult> {
+		if (IS_SKITZ) {
+			return this.showLoginDialog("openai-codex", "ChatGPT subscription");
+		}
 		const dialog = new LoginDialogComponent(
 			this.host.ui,
 			PRIME_INFERENCE_PROVIDER_ID,
@@ -626,6 +636,10 @@ export class ProviderAuthFlows {
 	}
 
 	async runPrimeAgentTracesLogin(): Promise<AuthenticationResult> {
+		if (IS_SKITZ) {
+			this.host.showStatus("Upstream trace sharing is not part of Skitz.");
+			return { status: "cancelled" };
+		}
 		const dialog = new LoginDialogComponent(
 			this.host.ui,
 			PRIME_AGENT_TRACES_PROVIDER_ID,

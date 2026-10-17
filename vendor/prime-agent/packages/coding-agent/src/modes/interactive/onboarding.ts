@@ -1,6 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AuthStatus } from "../../core/auth-storage.js";
 import { PRIME_INFERENCE_PROVIDER_ID } from "../../core/prime-inference-auth.js";
+import { IS_SKITZ } from "../../product.js";
 
 export interface OnboardingSettingsReader {
 	getOnboardingShown(): boolean;
@@ -19,6 +20,7 @@ export interface OnboardingStartupState {
 }
 
 export function shouldRunPrimeCliOnboardingSplash(state: OnboardingStartupState): boolean {
+	if (IS_SKITZ) return false;
 	if (state.settingsManager.getOnboardingShown()) {
 		return false;
 	}
@@ -34,6 +36,8 @@ export function isOnboardingModelReady(state: OnboardingStartupState): boolean {
 }
 
 export function shouldRunOnboarding(state: OnboardingStartupState): boolean {
+	// Skitz's launcher handles ChatGPT sign-in before interactive startup.
+	if (IS_SKITZ) return false;
 	if (state.settingsManager.getOnboardingShown()) {
 		return false;
 	}

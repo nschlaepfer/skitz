@@ -1,4 +1,7 @@
 import { APP_NAME } from "../config.js";
+import { IS_SKITZ, PRODUCT_DESCRIPTION } from "../product.js";
+
+const CLI_COMMAND = IS_SKITZ ? "skitz agent" : APP_NAME;
 
 export interface CommandSpec {
 	path: readonly string[];
@@ -149,7 +152,7 @@ export const COMMAND_SPECS: readonly CommandSpec[] = [
 	{
 		path: ["update"],
 		usage: "update [--force]",
-		summary: "Update Prime Agent",
+		summary: IS_SKITZ ? "Updates are managed through the Skitz repository" : "Update Prime Agent",
 	},
 	{
 		path: ["model"],
@@ -309,14 +312,19 @@ export function findCommandSuggestion(input: string, candidates: readonly string
 }
 
 export function formatTopLevelHelp(): string {
-	const commands = COMMAND_SPECS.filter((spec) => spec.path.length === 1);
+	const commands = COMMAND_SPECS.filter((spec) => spec.path.length === 1 && (!IS_SKITZ || spec.path[0] !== "update"));
 	const commandWidth = Math.max(...commands.map((spec) => spec.path[0]!.length));
-	const options = TOP_LEVEL_OPTION_GROUPS.map((group) => formatOptionGroup(group.heading, group.options)).join("\n\n");
-	return `${APP_NAME} - AI coding assistant with a Python REPL tool
+	const options = TOP_LEVEL_OPTION_GROUPS.map((group) =>
+		formatOptionGroup(
+			group.heading,
+			group.options.filter(([option]) => !IS_SKITZ || !/^--(?:provider|api-key|models)\b/.test(option)),
+		),
+	).join("\n\n");
+	return `${APP_NAME} - ${PRODUCT_DESCRIPTION}
 
 Usage:
-  ${APP_NAME} [options] [@files...] [message...]
-  ${APP_NAME} <command> [args...]
+  ${CLI_COMMAND} [options] [@files...] [message...]
+  ${CLI_COMMAND} <command> [args...]
 
 Options:
 ${options}
@@ -324,7 +332,7 @@ ${options}
 Commands:
 ${commands.map((spec) => `  ${spec.path[0]!.padEnd(commandWidth)}  ${spec.summary}`).join("\n")}
 
-Run "${APP_NAME} help <command>" for command details.`;
+Run "${CLI_COMMAND} help <command>" for command details.`;
 }
 
 function formatOptionGroup(heading: string, options: readonly TopLevelOption[]): string {
@@ -338,7 +346,7 @@ export function formatCommandHelp(path: readonly string[]): string | undefined {
 		return undefined;
 	}
 	const children = getChildCommandSpecs(path);
-	const sections = [`Usage:\n  ${APP_NAME} ${spec.usage}`, "", `${spec.summary}.`];
+	const sections = [`Usage:\n  ${CLI_COMMAND} ${spec.usage}`, "", `${spec.summary}.`];
 	if (spec.description) {
 		sections.push("", spec.description);
 	}
@@ -354,7 +362,7 @@ export function formatCommandHelp(path: readonly string[]): string | undefined {
 		sections.push("", "Options:", ...spec.options.map((option) => `  ${option}`));
 	}
 	if (spec.examples && spec.examples.length > 0) {
-		sections.push("", "Examples:", ...spec.examples.map((example) => `  ${APP_NAME} ${example}`));
+		sections.push("", "Examples:", ...spec.examples.map((example) => `  ${CLI_COMMAND} ${example}`));
 	}
 	return sections.join("\n");
 }

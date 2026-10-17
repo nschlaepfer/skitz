@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-tui";
 import type { AuthStorage } from "../../../core/auth-storage.js";
 import type { ModelRegistry } from "../../../core/model-registry.js";
+import { IS_SKITZ } from "../../../product.js";
 import { theme } from "../theme/theme.js";
 import { keyText } from "./keybinding-hints.js";
 import { getMenuPanelInnerWidth } from "./menu-panel.js";
@@ -134,7 +135,7 @@ export class ConfigurationMenuComponent extends Container implements Focusable {
 				header: tabBar,
 				getHeaderRows,
 				title: "Providers",
-				subtitle: "Connect with a subscription or API key.",
+				subtitle: IS_SKITZ ? "Connect your ChatGPT subscription." : "Connect with a subscription or API key.",
 				searchPlaceholder: "Search providers",
 			},
 		);
@@ -147,7 +148,7 @@ export class ConfigurationMenuComponent extends Container implements Focusable {
 			options.onCancel,
 			options.initialModelSearch,
 			{
-				availableModels: options.availableModels,
+				availableModels: options.availableModels.filter((model) => !IS_SKITZ || model.provider === "openai-codex"),
 				configuredProviders: options.configuredProviders,
 				header: tabBar,
 				getHeaderRows,
@@ -223,7 +224,11 @@ export class ConfigurationMenuComponent extends Container implements Focusable {
 		models?: ReadonlyArray<Model<Api>>,
 		configuredProviders?: ReadonlySet<string>,
 	): void {
-		this.bodies.models.updateState(currentModel, models, configuredProviders);
+		this.bodies.models.updateState(
+			currentModel,
+			models?.filter((model) => !IS_SKITZ || model.provider === "openai-codex"),
+			configuredProviders,
+		);
 	}
 
 	handleInput(keyData: string): void {

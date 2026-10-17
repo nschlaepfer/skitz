@@ -1,4 +1,5 @@
 // Dependency-free and Node-20-safe so it can never crash on the versions it rejects.
+import { IS_SKITZ } from "../product.js";
 
 const MIN_NODE_VERSION_PARTS = [22, 8, 0] as const;
 export const MIN_NODE_VERSION = MIN_NODE_VERSION_PARTS.join(".");
@@ -48,11 +49,16 @@ export function assertNodeVersion(io: NodeVersionGuardIO): boolean {
 		return true;
 	}
 
-	io.log(`prime-agent requires Node ${MIN_NODE_VERSION} or newer, but the active Node is v${io.version}.`);
+	const command = IS_SKITZ ? "skitz" : "prime-agent";
+	io.log(`${command} requires Node ${MIN_NODE_VERSION} or newer, but the active Node is v${io.version}.`);
 	io.log("");
 	io.log(`  1. Install Node ${MIN_NODE_VERSION}+ (e.g. "nvm install 22 && nvm use 22", or from https://nodejs.org)`);
-	io.log("  2. Reinstall prime-agent under that Node so the command resolves to it:");
-	io.log("     https://github.com/PrimeIntellect-ai/prime-agent/releases/latest");
+	io.log(`  2. Reinstall ${command} under that Node so the command resolves to it:`);
+	io.log(
+		IS_SKITZ
+			? "     https://github.com/nschlaepfer/skitz"
+			: "     https://github.com/PrimeIntellect-ai/prime-agent/releases/latest",
+	);
 	io.exit(1);
 	return false;
 }

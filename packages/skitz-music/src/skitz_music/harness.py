@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -40,6 +41,7 @@ def runtime_environment(environ: dict[str, str] | None = None) -> dict[str, str]
             "PRIME_AGENT_SESSION_DIR": str(state / "sessions"),
             "PRIME_AGENT_KERNEL_VENV": str(state / "kernel-venv"),
             "SKITZ_SUBSCRIPTION_ONLY": "1",
+            "SKITZ_PRODUCT": "1",
             "SKITZ_DISABLE_UPDATES": "1",
             "PI_OFFLINE": "1",
         }
@@ -88,9 +90,14 @@ def launch_agent(args: list[str]) -> int:
     if args and args[0] in {"update", "/update"}:
         raise ValueError("Skitz pins its Prime runtime; update it through a reviewed source import")
     script = repository() / "vendor/prime-agent/packages/coding-agent/src/cli.ts"
-    return subprocess.call(
-        [*node_command(script), *agent_arguments(args)], env=runtime_environment()
-    )
+    prepared = agent_arguments(args)
+    informational = any(arg in {"--help", "-h", "--version", "-v"} for arg in args)
+    if not informational and not doctor()["subscription_configured"]:
+        if "-p" in args or "--print" in args or "--mode" in args or not sys.stdin.isatty():
+            raise RuntimeError("Sign in with your ChatGPT subscription first: skitz login")
+        if login() != 0:
+            return 1
+    return subprocess.call([*node_command(script), *prepared], env=runtime_environment())
 
 
 def login(status: bool = False) -> int:
