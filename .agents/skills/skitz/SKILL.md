@@ -6,7 +6,8 @@ description: Use Skitz to create, inspect, validate, render and make protected e
 # Skitz for Codex
 
 Use the local Skitz MCP tools when connected. Otherwise run `uv run skitz` from
-this repository. `uv run skitz schema` exposes the exact canonical score format.
+this repository. `uv run skitz schema` exposes the exact canonical score format
+(schema 2: chords, meter/tempo maps) and `uv run skitz schema patch` the edit ops.
 Read `packages/skitz-music/SKILL.md` for Python calls, representations and edit
 constraints. These operations run locally without model calls or API keys.
 
@@ -17,7 +18,8 @@ on Claude with their Anthropic API key (`skitz auth login claude`, default
 Point the user at those commands.
 
 Inspect HEAD, declare the allowed measures, patch against that revision, validate,
-render and compare. Preserve protected tracks and save evidence for every revision.
+render and compare. Patches can split, merge, insert, delete, resize and replace
+events, transpose and change tempo or meter, but nothing shifts implicitly. Preserve protected tracks and save evidence for every revision.
 Do not overwrite validators or manually mutate project state. Treat chorale
 conventions as style-specific diagnostics and audio generation as rendering,
 not listening. The authored demo and deterministic evaluation are test fixtures,

@@ -21,18 +21,31 @@ with no tools or durable state during each response.
 
 ## Score Ownership
 
-V1 deliberately supports one meter and tempo, monophonic tracks, exact rational
-quarter-unit positions, spelled pitches, event IDs, rests, ties and basic
-articulations. Use separate tracks for simultaneous voices. JSON schemas reject
-extra fields and unsupported values. Structure checking is independent of model
-output; chorale warnings are separately labeled and have located event evidence.
+Schema 2 supports exact rational quarter-unit positions, spelled pitches, event
+IDs, rests, chords, ties and basic articulations, with meter and tempo maps that
+change only at measure starts. A track is one rhythmic line; use separate tracks
+for independent voices. JSON schemas reject extra fields and unsupported values.
+Structure checking is independent of model output: no overlaps or gaps, ties
+between equal pitch sets, whole measures of the meter map, equal track lengths and
+no map changes past the end. Chorale warnings are separately labeled and have
+located event evidence.
 
 Every canonical score revision is addressed by SHA-256. Reads check the content
 hash. A project lock serializes mutations; expected-revision checks reject stale
-edits. A patch declares allowed measures and cannot change IDs, timing, track
-membership or protected tracks. The baseline policy persists across invocations.
-Rollback checks the same protected baseline. HEAD updates are atomic; history is
-retained. These guarantees cover use through the operations, not malicious direct
+edits. Patch edits (`skitz schema patch`) apply in order to a working copy; nothing
+shifts implicitly. The whole result must then pass the schema and structure
+checks, every measure whose events, barlines, meter or tempo changed must be in
+the declared allowed measures, new event IDs must be unused, IDs never move between
+tracks, and protected tracks must equal the baseline. The baseline policy persists
+across invocations. Rollback checks the same protected baseline. HEAD updates are
+atomic; history is retained.
+
+Schema-1 projects migrate on first use under the project lock. Each original
+revision's hash is verified, its schema-2 form is written beside it,
+`migrations.json` maps old revision IDs to new ones (old IDs keep working for
+reads, patches and rollback), history records the migration and `format.json`
+marks completion. Renders made before migration name the old revision, so
+re-render before `skitz verify`. These guarantees cover use through the operations, not malicious direct
 filesystem edits by an unrestricted agent.
 
 MIDI, MusicXML and escaped LilyPond are derived from the canonical score. SATB

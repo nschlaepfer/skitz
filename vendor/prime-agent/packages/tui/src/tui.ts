@@ -329,6 +329,8 @@ export class TUI extends Container {
 	private fullRedrawCount = 0;
 	private preserveViewportOnNextRender = false; // One-shot: repaint visible viewport in place instead of replaying scrollback
 	private stopped = false;
+	private backgroundPainter: ((frame: string[], width: number, height: number) => string[]) | undefined;
+	private backgroundTimer: NodeJS.Timeout | undefined;
 	private fullscreenLeftMouseDragged = false;
 	private fullscreenPressedHyperlink: string | null = null;
 	private overlaySelectionRegions: FrameSelectionRegion[] = [];
@@ -604,6 +606,7 @@ export class TUI extends Container {
 		const preserveAltScreen = options.preserveAltScreen === true && this.terminal.altScreenActive;
 		const flushFullscreen = options.flushFullscreen ?? !preserveAltScreen;
 		this.exitFullscreen({ flush: flushFullscreen, leaveAltScreen: !preserveAltScreen });
+		this.setBackgroundPainter(undefined);
 		this.stopped = true;
 		if (this.renderTimer) {
 			clearTimeout(this.renderTimer);
@@ -678,6 +681,31 @@ export class TUI extends Container {
 	 * Wheel tracking is enabled blind — probing is not viable (tmux never
 	 * answers DECRQM) and unsupporting terminals ignore the mode-sets.
 	 */
+	/**
+	 * Paint an animated backdrop into empty space of fullscreen frames. The painter gets
+	 * each composed frame (one line per row) before overlays, and returns it with the
+	 * backdrop added; the screen redraws `fps` times a second while one is set. Inline
+	 * (non-fullscreen) rendering is never touched, so scrollback stays clean.
+	 */
+	setBackgroundPainter(
+		painter: ((frame: string[], width: number, height: number) => string[]) | undefined,
+		fps = 8,
+	): void {
+		if (this.backgroundTimer) clearInterval(this.backgroundTimer);
+		this.backgroundTimer = undefined;
+		this.backgroundPainter = painter;
+		if (painter && fps > 0) {
+			this.backgroundTimer = setInterval(
+				() => {
+					if (this.fullscreen && !this.stopped) this.requestRender();
+				},
+				Math.round(1000 / fps),
+			);
+			this.backgroundTimer.unref?.();
+		}
+		this.requestRender();
+	}
+
 	enterFullscreen(options: FullscreenOptions): void {
 		if (this.fullscreen) return;
 		this.fullscreenLeftMouseDragged = false;
@@ -1502,6 +1530,15 @@ export class TUI extends Container {
 		});
 
 		let frame = fullscreen.viewport.composeFrame(transcript, dock, height, selectionRegions);
+		if (this.backgroundPainter) {
+			try {
+				const painted = this.backgroundPainter(frame, width, height);
+				if (painted.length === frame.length) frame = painted;
+			} catch {
+				// A decorative backdrop must never take the screen down: drop it and carry on.
+				this.setBackgroundPainter(undefined);
+			}
+		}
 		this.overlaySelectionRegions.push(
 			...this.createDockSelectionRegions(frame, fullscreen.viewport.windowHeight(), width),
 		);
