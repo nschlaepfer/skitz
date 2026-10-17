@@ -54,9 +54,15 @@ describe("Skitz visuals extension", () => {
 		const start = 1_000_000;
 		const state = { pid: 1, title: "song.wav", started_at: start, fps: 10, seconds: 3, frames: [[0], [100], [0]] };
 		const lines = visualizerLines(state, (start + 0.15) * 1000).map(strip);
-		expect(lines).toHaveLength(5);
-		expect(lines[0]).toContain("██");
-		expect(lines[4]).toContain("♪ song.wav  0:00 / 0:03");
+		expect(lines).toEqual(["  ██", "  ♪ song.wav  0:00 / 0:03"]);
+	});
+
+	it("keeps the strip at two rows for the whole song, with or without frames", () => {
+		const start = 1_000_000;
+		const playing = { pid: 1, title: "song.wav", started_at: start, fps: 10, seconds: 3, frames: [[10], [100]] };
+		const heights = [0, 0.15, 2.5, 9].map((t) => visualizerLines(playing, (start + t) * 1000).length);
+		expect(new Set(heights)).toEqual(new Set([2]));
+		expect(visualizerLines({ pid: 1, title: "x.wav", started_at: start }, start * 1000)).toHaveLength(2);
 	});
 });
 

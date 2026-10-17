@@ -776,6 +776,10 @@ ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
 // Render below the editor
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"], { placement: "belowEditor" });
 
+// Pin right above the editor: in fullscreen it stays in the fixed dock instead of
+// scrolling with the transcript, and each line is truncated to one row (live status, meters)
+ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"], { placement: "pinned" });
+
 // Or with theme
 ctx.ui.setWidget("my-widget", (_tui, theme) => {
   const lines = items.map((item, i) =>

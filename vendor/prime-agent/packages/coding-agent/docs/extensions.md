@@ -2239,6 +2239,8 @@ ctx.ui.setWorkingIndicator();  // Restore default spinner
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"]);
 // Widget below editor
 ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"], { placement: "belowEditor" });
+// Widget pinned above the editor (fixed in fullscreen, never scrolls with the transcript; one row per line)
+ctx.ui.setWidget("my-widget", ["Line 1", "Line 2"], { placement: "pinned" });
 ctx.ui.setWidget("my-widget", (tui, theme) => new Text(theme.fg("accent", "Custom"), 0, 0));
 ctx.ui.setWidget("my-widget", undefined);  // Clear
 
