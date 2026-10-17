@@ -15,8 +15,8 @@ product completeness; the important distinction is which behavior Skitz owns.
 | Area | Current State | Next Useful Work |
 | --- | --- | --- |
 | Agent execution | Live subscription composition and repair verified | Independently owned autonomous completion gates |
-| Score model | Exact rhythms, spelled pitches, tracks and stable IDs | Chords, tempo/meter maps and richer expression |
-| Editing | Protected pitch/tie/articulation edits and rollback | Insert/delete notes, rhythmic edits, transposition and arrangement |
+| Score model | Exact rhythms, spelled pitches, chords, meter/tempo maps, stable IDs | Key changes, independent voices per track, dynamics and richer expression |
+| Editing | Protected pitch, chord, rhythm (split/merge/insert/delete/replace), transposition and tempo/meter edits with rollback | Arrangement edits (add/move sections, add tracks) and readable musical diffs |
 | Playback and notation | PDF, MIDI, MusicXML and WAV with hashes | In-app playback, score preview and synchronized passage selection |
 | Revision comparison | Exact event differences and unchanged tracks | A/B auditions and readable musical diffs |
 | Evaluation | Structural checks, limited chorale rules, separated response/repair runs | Held-out tasks, multiple styles and blind human comparisons |
@@ -24,8 +24,8 @@ product completeness; the important distinction is which behavior Skitz owns.
 | Distribution | Source install; macOS restricted rendering | Packaged releases, bundled renderer setup and other-platform workers |
 
 Recommended next milestone: make revising and comparing music ergonomic. Add
-score/audio preview and A/B comparison, then extend the patch API for rhythm and
-arrangement while retaining protected-content checks. Broaden the evaluation
+score/audio preview and A/B comparison, then extend the patch API for arrangement
+(sections, new tracks) while retaining protected-content checks. Broaden the evaluation
 suite alongside those edits. DAW/VST adapters can follow once that workflow is reliable.
 
 Upstream copyright notices, licenses and attribution remain. User-facing branding

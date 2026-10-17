@@ -45,7 +45,8 @@ def main() -> int:
     auth = commands.add_parser("login", help="Sign in with your ChatGPT subscription")
     auth.add_argument("--status", action="store_true")
     commands.add_parser("doctor", help="Inspect local tools and subscription setup")
-    commands.add_parser("schema", help="Print the versioned score JSON schema")
+    schema = commands.add_parser("schema", help="Print the versioned score or patch JSON schema")
+    schema.add_argument("kind", nargs="?", choices=["score", "patch"], default="score")
     demo = commands.add_parser(
         "demo", help="Create an authored test fixture, not an AI composition"
     )
@@ -54,17 +55,24 @@ def main() -> int:
     create.add_argument("project")
     create.add_argument("score")
     create.add_argument("--protect", action="append", default=[])
-    imported = commands.add_parser("import", help="Import monophonic ABC or MusicXML parts")
+    imported = commands.add_parser(
+        "import", help="Import ABC or MusicXML parts (chords, meter and tempo changes)"
+    )
     imported.add_argument("project")
     imported.add_argument("source")
     for name in ("inspect", "validate", "analyze"):
         command = commands.add_parser(name)
         command.add_argument("project")
         command.add_argument("--revision")
+    migrate = commands.add_parser(
+        "migrate", help="Upgrade a project to the current score schema (also automatic on read)"
+    )
+    migrate.add_argument("project")
     patch = commands.add_parser("patch")
     patch.add_argument("project")
     patch.add_argument(
-        "patch_file", help="JSON with expected_revision, edits, allowed_measures, reason"
+        "patch_file",
+        help="JSON with expected_revision, edits, allowed_measures, reason (skitz schema patch)",
     )
     render = commands.add_parser("render")
     render.add_argument("project")
@@ -124,7 +132,9 @@ def main() -> int:
 
             result = {**doctor(), "soundfont": soundfont_status()}
         elif args.command == "schema":
-            result = Score.model_json_schema()
+            from .patch import ScorePatch
+
+            result = (Score if args.kind == "score" else ScorePatch).model_json_schema()
         elif args.command == "demo":
             result = Project(args.project).create(chorale_fixture(), ["soprano"])
         elif args.command == "create":
@@ -140,9 +150,14 @@ def main() -> int:
                 "analyze": analyze_voice_leading,
             }[args.command]
             result = operation(Project(args.project).read(args.revision))
+        elif args.command == "migrate":
+            result = Project(args.project).migrate()
         elif args.command == "patch":
+            from .patch import ScorePatch
+
+            request = ScorePatch.model_validate_json(Path(args.patch_file).read_text())
             result = Project(args.project).apply_score_patch(
-                **json.loads(Path(args.patch_file).read_text())
+                request.expected_revision, request.edits, request.allowed_measures, request.reason
             )
         elif args.command == "render":
             project = Project(args.project)
