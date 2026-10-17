@@ -132,12 +132,17 @@ payload = build_payload(description="warm lofi beat about rainy mornings", model
 # Custom mode: build_payload(lyrics="[Verse]\n...", tags="indie folk, male vocals", title="...")
 clips = suno.generate(payload)
 done = suno.wait([c["id"] for c in clips], timeout=300)
-suno.download(done, Path("songs/rainy-mornings"), request=payload)  # mp3s + manifest.json
+suno.download(done, Path("songs/rainy-mornings"), request=payload)  # audio + manifest.json
 ```
 
-As of October 2026, Suno blocks audio downloads for API clients: `download` raises
-`SunoError` with kind `download_restricted` (exit code 7). Ask the user to download
-the song or stems on suno.com, then work on those files with `skitz_music.samples`.
+As of October 2026, Suno serves no audio to API clients; its Download button builds the
+file in the browser, with the clip id in the file's metadata. `download` imports the
+user's downloads from `~/Downloads` or `~/.skitz/suno/inbox` by that id. For songs not
+downloaded yet it raises `SunoError` kind `download_restricted` (exit code 7) with
+`song_urls`. Ask the user to click Download on those pages, or call
+`suno.download(done, folder, request=payload, wait_for_browser=True)` to open them and wait
+for the files. Never try to read the web player's protected stream. Stems still come from
+Get Stems > Download on suno.com or from `skitz_music.separate`.
 `suno.stems(clip_id)` lists the 12 stems in 2 variants, and
 `tempo_from_downbeats(suno.downbeats(clip_id))` gives `bpm` and `first_downbeat`.
 Pass those to `chop_loops(..., bpm=..., offset=...)` to cut on Suno's bar lines.

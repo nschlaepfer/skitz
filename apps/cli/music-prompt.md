@@ -33,6 +33,11 @@ For a finished, produced song rather than an editable score, use `skitz_music.su
 (see the skill). It spends the user's Suno credits, so confirm before generating
 repeatedly. If Suno asks for a captcha, says the session expired or runs out of
 credits, stop and tell the user what to do; never try to get around a captcha.
+Suno makes people download songs in the browser. To get the audio, call
+`suno.download(clips, folder, request=payload, wait_for_browser=True)`: it opens each
+song's page, and you tell the user to click Download there. Skitz picks the files up
+from ~/Downloads by the clip id inside them, so never ask the user to move, rename or
+report files.
 To build audio from samples, generate focused instrumental Suno clips at a stated
 BPM, then cut and layer them with `skitz_music.samples`. Render a Skitz score first
 to use it as the base of a mix. Describe a layered mix as arranged from samples,

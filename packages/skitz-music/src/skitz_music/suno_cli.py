@@ -2,8 +2,13 @@
 
 Prints one JSON object to stdout; progress goes to stderr. Exit codes: 0 ok, 1 usage,
 2 API error, 3 cookie missing or expired, 4 captcha required, 5 out of credits,
-6 timed out (wait again with the same ids), 7 Suno does not allow downloading that
-audio (stems: use Download on suno.com). Codes 3-5 and 7 need a person to act.
+6 timed out (wait again with the same ids), 7 audio must be downloaded on suno.com.
+Codes 3-5 and 7 need a person to act.
+
+Suno builds downloads in the browser, so for songs it no longer serves, `download`
+(and `--out`) take the files from ~/Downloads or ~/.skitz/suno/inbox, matched by the
+clip id Suno embeds in each file. `--wait-for-browser` opens the song pages and waits
+for the user to click Download; `inbox` lists the Suno files found.
 """
 
 import argparse
@@ -20,10 +25,12 @@ from .suno import (
     SunoError,
     build_payload,
     download_stems,
+    inbox_listing,
     request_record,
     slim,
     tempo_from_downbeats,
 )
+from .suno_inbox import remember_request
 
 
 def parser() -> argparse.ArgumentParser:
@@ -47,6 +54,16 @@ def parser() -> argparse.ArgumentParser:
         command.add_argument("--timeout", type=float, default=600)
         command.add_argument("--interval", type=float, default=5)
 
+    def browser(command: argparse.ArgumentParser) -> None:
+        command.add_argument(
+            "--wait-for-browser",
+            action="store_true",
+            help="Open the song pages and wait for the files you download there",
+        )
+        command.add_argument(
+            "--no-open", action="store_true", help="With --wait-for-browser: don't open pages"
+        )
+
     generate = commands.add_parser("generate", help="Start a song (2 clips; spends credits)")
     generate.add_argument("-d", "--description", help="Simple mode: Suno writes the lyrics")
     generate.add_argument("-l", "--lyrics", help="Custom mode: lyrics with [Verse]/[Chorus] tags")
@@ -63,6 +80,7 @@ def parser() -> argparse.ArgumentParser:
     generate.add_argument("-o", "--out", help="Wait, then save mp3s and a manifest here")
     generate.add_argument("--dry-run", action="store_true", help="Print the payload only")
     waiting(generate)
+    browser(generate)
 
     status = commands.add_parser("status", help="Show the current state of clips")
     status.add_argument("ids", nargs="+")
@@ -70,9 +88,15 @@ def parser() -> argparse.ArgumentParser:
     wait.add_argument("ids", nargs="+")
     wait.add_argument("-o", "--out")
     waiting(wait)
-    download = commands.add_parser("download", help="Save finished clips as mp3")
+    browser(wait)
+    download = commands.add_parser(
+        "download", help="Save finished clips (from Suno, or from your downloads on suno.com)"
+    )
     download.add_argument("ids", nargs="+")
     download.add_argument("-o", "--out", default=".")
+    download.add_argument("--timeout", type=float, default=600)
+    browser(download)
+    commands.add_parser("inbox", help="List Suno files found in ~/Downloads and the inbox")
     stems = commands.add_parser(
         "stems", help="List or download stems made on suno.com (Edit > Get Stems)"
     )
@@ -115,9 +139,13 @@ def run(args: argparse.Namespace, transport: httpx.BaseTransport | None = None) 
         client = SunoClient(transport=transport)
         print(f"[suno] generating with {payload['mv']}", file=sys.stderr)
         ids = [clip["id"] for clip in client.generate(payload)]
+        request = request_record(payload, args.bpm)
+        remember_request(ids, request)
         if not (args.wait or args.out):
             return {"status": "submitted", "ids": ids}
-        return finish(client, ids, args, request_record(payload, args.bpm))
+        return finish(client, ids, args, request)
+    if args.command == "inbox":
+        return inbox_listing()
 
     client = SunoClient(transport=transport)
     if args.command == "whoami":
@@ -132,7 +160,9 @@ def run(args: argparse.Namespace, transport: httpx.BaseTransport | None = None) 
         missing = [clip["id"] for clip in clips if not clip.get("audio_url")]
         if missing:
             raise SunoError("not_ready", "Some clips have no audio yet; wait first.", ids=missing)
-        return client.download(clips, Path(args.out))
+        return client.download(
+            clips, Path(args.out), None, args.wait_for_browser, args.timeout, not args.no_open
+        )
     if args.command == "stems":
         out = Path(args.out) if args.out else None
         return download_stems(client, args.clip_id, out, args.variant, args.only)
@@ -150,7 +180,16 @@ def finish(
     clips = client.wait(ids, args.timeout, args.interval)
     result = {"status": "complete", "ids": ids, "clips": [slim(clip) for clip in clips]}
     if args.out:
-        result.update(client.download(clips, Path(args.out), payload))
+        result.update(
+            client.download(
+                clips,
+                Path(args.out),
+                payload,
+                args.wait_for_browser,
+                args.timeout,
+                not args.no_open,
+            )
+        )
     if any(clip.get("status") == "error" for clip in clips):
         raise SunoError("generation_failed", "One or more clips failed.", **result)
     return result
