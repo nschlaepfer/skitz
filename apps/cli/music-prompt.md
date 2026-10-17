@@ -26,3 +26,7 @@ For a finished, produced song rather than an editable score, use `skitz_music.su
 (see the skill). It spends the user's Suno credits, so confirm before generating
 repeatedly. If Suno asks for a captcha, says the session expired or runs out of
 credits, stop and tell the user what to do; never try to get around a captcha.
+To build audio from samples, generate focused instrumental Suno clips at a stated
+BPM, then cut and layer them with `skitz_music.samples`. Render a Skitz score first
+to use it as the base of a mix. Describe a layered mix as arranged from samples,
+not as listened to or mastered.

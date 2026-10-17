@@ -86,6 +86,29 @@ hashes. The agent uses `skitz_music.suno`, and MCP clients get `suno_credits`,
 captcha, Skitz stops with exit code 4. Create one song by hand on suno.com, then
 retry. Skitz never tries to solve or get around a captcha.
 
+### Samples
+
+Suno clips can also be cut into samples and layered into new audio (needs ffmpeg):
+
+```sh
+uv run skitz suno generate -i -t "dusty boom bap drum break" --bpm 90 --out songs/drums
+uv run skitz samples info songs/drums/<clip>.mp3
+uv run skitz samples loops songs/drums/<clip>.mp3 --bars 2 --out samples/drums
+uv run skitz samples hits songs/drums/<clip>.mp3 --max 16 --out samples/drum-hits
+uv run skitz samples layer out/beat.wav --bpm 90 --bars 8 \
+  --place samples/drums/<loop01>.wav:0:x4/2 \
+  --place samples/drum-hits/<hit01>.wav:3q:x8/4:-4dB \
+  --base my-piece/renders/<run>/score.wav
+```
+
+`--bpm` on `generate` adds the tempo to the Suno prompt and records it, so `loops`
+cuts on the bar grid without being told again. A placement is
+`SAMPLE:AT[b|q|s][:xREPEAT/EVERY][:GAINdB]`, in 0-based bars (default), beats (`q`)
+or seconds (`s`). `--plan` takes the same placements as JSON. Outputs are 16-bit
+44.1 kHz WAVs, each with a manifest of source hashes, cut points and settings. MCP
+clients get `samples_info`, `samples_loops`, `samples_hits`, `samples_slice` and
+`samples_layer`.
+
 ## Rendering
 
 On macOS:

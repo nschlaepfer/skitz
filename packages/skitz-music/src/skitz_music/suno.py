@@ -133,7 +133,10 @@ def build_payload(
     negative_tags: str | None = None,
     instrumental: bool = False,
     model: str | None = None,
+    bpm: float | None = None,
 ) -> dict:
+    """Build the generate request. `bpm` is written into the style so loops line up."""
+    tempo = f"{bpm:g} bpm" if bpm else None
     payload: dict[str, Any] = {
         "mv": MODELS.get(model or DEFAULT_MODEL, model or DEFAULT_MODEL),
         "make_instrumental": instrumental,
@@ -141,17 +144,24 @@ def build_payload(
         "token": None,
     }
     if lyrics is not None or tags or title:
-        payload.update(prompt="" if instrumental else (lyrics or ""), tags=tags or "")
+        style = ", ".join(part for part in (tags, tempo) if part)
+        payload.update(prompt="" if instrumental else (lyrics or ""), tags=style)
         payload["title"] = title or ""
         if negative_tags:
             payload["negative_tags"] = negative_tags
     elif description:
-        payload.update(gpt_description_prompt=description, prompt="")
+        text = f"{description}, {tempo}" if tempo else description
+        payload.update(gpt_description_prompt=text, prompt="")
     else:
         raise SunoError(
             "usage", "Give a description (simple mode) or lyrics/tags/title (custom mode)."
         )
     return payload
+
+
+def request_record(payload: dict, bpm: float | None) -> dict:
+    """What a download manifest records: the request plus Skitz-only fields."""
+    return {**payload, "skitz_bpm": bpm} if bpm else payload
 
 
 class SunoClient:
@@ -343,15 +353,16 @@ class SunoService:
         model: str | None = None,
         output_dir: str | None = None,
         timeout: float = 240,
+        bpm: float | None = None,
     ) -> dict:
         payload = build_payload(
-            description, lyrics, tags, title, negative_tags, instrumental, model
+            description, lyrics, tags, title, negative_tags, instrumental, model, bpm
         )
         clips = self.client.generate(payload)
         ids = [clip["id"] for clip in clips]
         if not output_dir:
             return {"status": "submitted", "ids": ids, "clips": [slim(c) for c in clips]}
-        return self.suno_wait(ids, output_dir, timeout, request=payload)
+        return self.suno_wait(ids, output_dir, timeout, request=request_record(payload, bpm))
 
     def suno_status(self, ids: list[str]) -> dict:
         return {"clips": [slim(clip) for clip in self.client.feed(ids)]}

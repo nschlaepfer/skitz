@@ -81,3 +81,40 @@ tell the user on `auth_missing` or `auth_expired` (save a fresh cookie with
 `out_of_credits`. Never try to solve or get around a captcha. On `timeout`, call
 `wait` again with the same ids. Suno audio is a separate artifact, not a revision of
 a Skitz score.
+
+## Samples from Suno
+
+Use Suno as a sample source: generate focused instrumental material at a known
+tempo, cut it into loops and one-shots, then layer those into new audio. This needs
+ffmpeg.
+
+```python
+from skitz_music import samples
+
+payload = build_payload(tags="dusty boom bap drum break, no melody", instrumental=True, bpm=90)
+clips = suno.wait([c["id"] for c in suno.generate(payload)], timeout=300)
+saved = suno.download(clips, Path("songs/drums"), request={**payload, "skitz_bpm": 90})
+mp3 = saved["files"][0]["path"]
+
+samples.info(mp3)                                         # length, peak, BPM recorded/estimated
+loops = samples.chop_loops(mp3, "samples/drums", bars=2)  # BPM read from the Suno manifest
+hits = samples.chop_hits(mp3, "samples/drum-hits", max_hits=16)
+samples.slice_sample(mp3, "samples/fx", start=12.0, end=14.5, name="riser")
+samples.layer(
+    "out/beat.wav",
+    [
+        {"sample": loops["outputs"][0]["path"], "at": 0, "repeat": 4, "every": 2},
+        {"sample": hits["outputs"][0]["path"], "at": 3, "unit": "beat", "gain_db": -4},
+    ],
+    bpm=90,
+    bars=8,
+    base="piece/renders/<run>/score.wav",  # optional: mix over a Skitz score render
+)
+```
+
+Placements are 0-based in `bar` (default with bpm), `beat` or `second` units. Each
+operation writes 16-bit, 44.1 kHz stereo WAVs plus a manifest with source hashes and
+cut points. Mixes that would clip are scaled to -1 dBFS and say so. Prompt Suno for
+isolated material ("drums only", "solo Rhodes chords", "no vocals") and put the tempo
+in `bpm`, so loops land on the bar grid. `estimated_bpm` is a rough estimate that
+can be off by double or half. Prefer the recorded BPM, or cut by `every` seconds.

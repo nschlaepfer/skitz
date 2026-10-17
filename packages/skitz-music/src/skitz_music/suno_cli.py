@@ -18,6 +18,7 @@ from .suno import (
     SunoClient,
     SunoError,
     build_payload,
+    request_record,
     save_cookie,
     slim,
 )
@@ -48,6 +49,9 @@ def parser() -> argparse.ArgumentParser:
     generate.add_argument("--title")
     generate.add_argument("-i", "--instrumental", action="store_true")
     generate.add_argument("-m", "--model", default=DEFAULT_MODEL)
+    generate.add_argument(
+        "--bpm", type=float, help="Ask for this tempo and record it for `skitz samples`"
+    )
     generate.add_argument("-w", "--wait", action="store_true", help="Block until clips finish")
     generate.add_argument("-o", "--out", help="Wait, then save mp3s and a manifest here")
     generate.add_argument("--dry-run", action="store_true", help="Print the payload only")
@@ -87,6 +91,7 @@ def run(args: argparse.Namespace, transport: httpx.BaseTransport | None = None) 
             args.negative_tags,
             args.instrumental,
             args.model,
+            args.bpm,
         )
         if args.dry_run:
             return {"status": "dry_run", "payload": payload}
@@ -95,7 +100,7 @@ def run(args: argparse.Namespace, transport: httpx.BaseTransport | None = None) 
         ids = [clip["id"] for clip in client.generate(payload)]
         if not (args.wait or args.out):
             return {"status": "submitted", "ids": ids}
-        return finish(client, ids, args, payload)
+        return finish(client, ids, args, request_record(payload, args.bpm))
 
     client = SunoClient(transport=transport)
     if args.command == "whoami":

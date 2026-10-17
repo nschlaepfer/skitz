@@ -115,6 +115,17 @@ def test_generate_waits_downloads_and_records_manifest(fake, capsys, tmp_path):
     assert manifest["files"][0]["sha256"] == result["files"][0]["sha256"]
 
 
+def test_bpm_goes_into_the_prompt_and_the_manifest(fake, capsys, tmp_path):
+    out = tmp_path / "drums"
+    code, result = run(
+        fake, capsys, "generate", "-i", "-t", "boom bap drums", "--bpm", "90", "--out", str(out)
+    )
+    assert code == 0, result
+    assert fake.generated[0]["tags"] == "boom bap drums, 90 bpm"
+    assert "skitz_bpm" not in fake.generated[0]
+    assert json.loads((out / "manifest.json").read_text())["request"]["skitz_bpm"] == 90
+
+
 def test_captcha_stops_without_generating(fake, capsys):
     fake.captcha = True
     code, result = run(fake, capsys, "generate", "-d", "a song")
@@ -171,6 +182,11 @@ def test_mcp_server_lists_suno_tools(tmp_path):
                     "suno_status",
                     "suno_wait",
                     "suno_lyrics",
+                    "samples_info",
+                    "samples_loops",
+                    "samples_hits",
+                    "samples_slice",
+                    "samples_layer",
                 } <= names
 
     asyncio.run(check())

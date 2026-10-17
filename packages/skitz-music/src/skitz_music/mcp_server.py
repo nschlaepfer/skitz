@@ -33,7 +33,8 @@ def create_server(workspace: str) -> FastMCP:
         "suno_generate": (
             "Generate a song on the user's Suno account (2 clips; spends credits). Give "
             "description, or lyrics/tags/title. With output_dir, waits and saves mp3s and a "
-            "manifest there; otherwise returns clip ids. A captcha_required or auth_expired "
+            "manifest there; otherwise returns clip ids. Set bpm (and usually instrumental) "
+            "when the clips will be cut into samples. A captcha_required or auth_expired "
             "error needs the user to act; never try to work around it."
         ),
         "suno_status": "Show the status and audio URLs of Suno clips by id.",
@@ -42,4 +43,24 @@ def create_server(workspace: str) -> FastMCP:
     }
     for name, description in suno_descriptions.items():
         server.tool(name=name, description=description)(getattr(suno, name))
+
+    from .samples import SamplesService
+
+    sampler = SamplesService(workspace)
+    sample_descriptions = {
+        "samples_info": "Length, peak, Suno-recorded BPM and an estimated BPM for an audio file.",
+        "samples_loops": (
+            "Cut audio (e.g. a Suno mp3) into back-to-back loops of `bars` at `bpm`, or "
+            "`every` seconds. BPM defaults to the one recorded by suno_generate(bpm=...)."
+        ),
+        "samples_hits": "Detect transients and cut them into one-shot WAVs (drum hits, stabs).",
+        "samples_slice": "Cut one region, in seconds, into a WAV.",
+        "samples_layer": (
+            "Mix samples onto a timeline into a new WAV, optionally over a base such as a "
+            "score render. Placements: {sample, at, unit: bar|beat|second, gain_db, repeat, "
+            "every}. Bars and beats are 0-based and need bpm."
+        ),
+    }
+    for name, description in sample_descriptions.items():
+        server.tool(name=name, description=description)(getattr(sampler, name))
     return server

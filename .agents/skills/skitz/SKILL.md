@@ -25,3 +25,8 @@ For finished, produced songs, use the `suno_*` MCP tools or `uv run skitz suno`
 (`--help` lists exit codes). They use the user's own Suno session cookie and spend
 Suno credits; each generation makes 2 clips. If you get `captcha_required`,
 `auth_expired` or `out_of_credits`, stop and tell the user. Never work around a captcha.
+
+To use Suno as a sample source, generate with a `bpm` (usually instrumental). Then
+cut the result with the `samples_*` MCP tools or `uv run skitz samples` (loops, hits,
+slice, layer, info). `layer` builds new WAVs from samples, optionally over a Skitz
+score render. Read `packages/skitz-music/SKILL.md` for the workflow.
