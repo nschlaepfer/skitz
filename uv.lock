@@ -931,7 +931,7 @@ wheels = [
 
 [[package]]
 name = "music21"
-version = "9.9.2"
+version = "10.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "chardet" },
@@ -944,9 +944,9 @@ dependencies = [
     { name = "requests" },
     { name = "webcolors" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b7/5c/84ad1f110639b65d167ec30270b592d0862f3be930771f7aa6dca4274aad/music21-9.9.2.tar.gz", hash = "sha256:0d705d2e682bfd49542ec05863bca75605d30c104af6195ed3893e6f92d0ff9e", size = 16733220, upload-time = "2026-05-12T01:08:59.28Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cd/f4/1f95fda14554cf0e070c8b6bb375a7bc64c020016670766c44bc910a6a84/music21-10.5.0.tar.gz", hash = "sha256:f72676fb953cb592bfb4e3bb246b0a234446f89088aa8a55ec9b5fcef2ce3db2", size = 16752906, upload-time = "2026-06-17T01:22:41.67Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/6d/cb427b1674405ee11140a8eff886475e717a51f0828f6d8cfa3c36f048b5/music21-9.9.2-py3-none-any.whl", hash = "sha256:648010ab8d1328d0b10746cef1457e84b12274cd316248227e96d21e27a518ca", size = 20104094, upload-time = "2026-05-13T09:15:37.212Z" },
+    { url = "https://files.pythonhosted.org/packages/81/4c/4f307e5ab6fbf59233813e58e07128a599c810dd974673449e132ce1432d/music21-10.5.0-py3-none-any.whl", hash = "sha256:9924eff5fbf58490e67cbf3b78a58ba53040e77c281930d354af32a747e94606", size = 20120138, upload-time = "2026-06-17T01:23:08.524Z" },
 ]
 
 [[package]]
@@ -1692,7 +1692,7 @@ suno = [
 requires-dist = [
     { name = "httpx", marker = "extra == 'suno'", specifier = ">=0.27,<1" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.12,<2" },
-    { name = "music21", specifier = ">=9.7,<10" },
+    { name = "music21", specifier = ">=10.5.0,<11" },
     { name = "pydantic", specifier = ">=2.14.1,<3" },
 ]
 provides-extras = ["mcp", "suno"]
