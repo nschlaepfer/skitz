@@ -104,6 +104,16 @@ def main() -> int:
     )
     verify.add_argument("project")
     verify.add_argument("--require-audio", action="store_true")
+    soundfont = commands.add_parser(
+        "soundfont", help="Install or check the SoundFont used for audio renders"
+    )
+    soundfont.add_argument("action", choices=["install", "status"], nargs="?", default="status")
+    soundfont.add_argument("--force", action="store_true", help="Download again")
+    play = commands.add_parser("play", help="Play a project's latest audio render or a file")
+    play.add_argument("target", nargs="?", help="Project folder or audio file")
+    play.add_argument("--background", action="store_true", help="Return while it plays")
+    play.add_argument("--stop", action="store_true", help="Stop background playback")
+    play.add_argument("--visualize", "-v", action="store_true", help="Show live spectrum bars")
     commands.add_parser(
         "auth", help="Connect providers: skitz auth login suno|chatgpt, skitz auth", add_help=False
     )
@@ -118,7 +128,9 @@ def main() -> int:
         if args.command == "login":
             return login(args.status)
         if args.command == "doctor":
-            result = doctor()
+            from .soundfonts import status as soundfont_status
+
+            result = {**doctor(), "soundfont": soundfont_status()}
         elif args.command == "schema":
             from .patch import ScorePatch
 
@@ -180,6 +192,21 @@ def main() -> int:
             from .verification import verify_project
 
             result = verify_project(args.project, args.require_audio)
+        elif args.command == "soundfont":
+            from . import soundfonts
+
+            result = (
+                soundfonts.install(args.force) if args.action == "install" else soundfonts.status()
+            )
+        elif args.command == "play":
+            from . import playback
+
+            if args.stop:
+                result = playback.stop()
+            elif not args.target:
+                parser.error("play needs a project folder or audio file")
+            else:
+                result = playback.play(args.target, args.background, args.visualize)
         else:
             parser.error("Unknown command")
         print(json.dumps(result, indent=2))

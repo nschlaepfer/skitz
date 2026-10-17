@@ -55,7 +55,10 @@ def create_server(workspace: str) -> MCPServer:
             "Compare event changes (changed, added, removed), changed measures and "
             "unchanged tracks between saved revisions."
         ),
-        "render_score": "Render notation, MIDI and optional audio with provenance and diagnostics.",
+        "render_score": (
+            "Render notation, MIDI and audio with provenance and diagnostics. Audio uses the "
+            "installed SoundFont; without one it is skipped with a hint (audio_skipped)."
+        ),
         "rollback": "Restore a saved revision while preserving protected tracks.",
         "export_project": "Export the accepted score, revision history and matching renders as a ZIP archive.",
     }
@@ -116,4 +119,17 @@ def create_server(workspace: str) -> MCPServer:
     }
     for name, description in sample_descriptions.items():
         server.tool(name=name, description=description)(getattr(sampler, name))
+
+    from .playback import PlaybackService
+
+    player = PlaybackService(workspace)
+    playback_descriptions = {
+        "play_audio": (
+            "Play audio on the user's speakers: a project folder plays its newest audio render "
+            "of the current revision, or give an audio file. Returns at once; stop_audio stops it."
+        ),
+        "stop_audio": "Stop audio started with play_audio.",
+    }
+    for name, description in playback_descriptions.items():
+        server.tool(name=name, description=description)(getattr(player, name))
     return server
