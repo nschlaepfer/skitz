@@ -199,6 +199,38 @@ marked `silent` had nothing in it, for example vocals in an instrumental. The de
 checkpoint has no stated license, so treat its stems as personal-use. The first run
 downloads about 700 MB of weights to `~/.skitz/models/separation`.
 
+To edit a stem as notation, transcribe it into a new project. This runs Spotify's
+basic-pitch 0.4.0 locally in its own uv tool environment (CoreML on Apple Silicon,
+about 10 s for 3 minutes of audio; the first run installs about 350 MB):
+
+```python
+from skitz_music.transcribe import transcribe
+
+result = transcribe(split["stems"]["bass"]["path"], "projects/song-bass")  # BPM carried over
+result["warnings"], result["notes"], result["onset_shift"]                # check these first
+project = Project("projects/song-bass")  # then inspect, patch and render as usual
+```
+
+Tempo comes from `bpm`, then `downbeats` (a saved `skitz suno downbeats` JSON), then
+the BPM Skitz recorded for the clip or its stems, then `estimate_bpm` (flagged in
+`warnings`). Pass `offset`, the first downbeat in seconds, so bar lines match the
+song; notes before it become a pickup. Notes snap to `grid` (16 = sixteenths, the
+default; 8, 4, 32, and 12 or 24 for triplets) and notes under half a step are
+dropped. Each track is one monophonic line with explicit rests, and notes crossing
+a bar line are tied. Overlapping notes are resolved by `line`: `bottom` for bass,
+`loudest` for vocals, `top` otherwise, and a note under half as loud as the one it
+competes with never wins (overtones). `tracks=3` peels chords into three tracks
+instead. `join_repeats=True` merges same-pitch notes that vibrato split apart. The
+key is estimated unless you pass `key`, and pitches are spelled in it. Drums are
+refused; cut them with `chop_hits`.
+
+The project gets `transcribe-manifest.json` (source hash, model and version, tempo
+sources, grid, and the count of notes merged, truncated or dropped and why) and
+`transcription/basic-pitch.mid` with the raw notes. If `onset_shift.mean_ms` is
+near a quarter of `grid_step_ms`, the tempo or offset is wrong. A transcription is
+an estimate: dense chords, pads and full mixes come out poorly, so separate first,
+and render the score to compare it with the stem before calling it faithful.
+
 Placements are 0-based in `bar` (default with bpm), `beat` or `second` units. Each
 operation writes 16-bit, 44.1 kHz stereo WAVs plus a manifest with source hashes and
 cut points. Mixes that would clip are scaled to -1 dBFS and say so. Prompt Suno for

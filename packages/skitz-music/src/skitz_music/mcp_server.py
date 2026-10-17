@@ -111,6 +111,19 @@ def create_server(workspace: str) -> MCPServer:
             "drumkit. drumkit=true also splits drums into kick/snare/toms/hh/ride/crash. "
             "Stems keep the source's recorded BPM for samples_loops."
         ),
+        "samples_transcribe": (
+            "Transcribe audio, usually a pitched stem from samples_stems, into a new editable "
+            "score project (basic-pitch, runs locally). Notes snap to a bar grid: bpm comes "
+            "from the argument, downbeats (a saved suno_downbeats JSON), the BPM recorded for "
+            "the file or its stems, else an estimate; offset is the first downbeat in seconds "
+            "(first_downbeat from suno_downbeats). grid is the shortest note (16 = sixteenths, "
+            "12 = eighth triplets). Each track is one monophonic line; tracks > 1 splits "
+            "chords, and line (top, bottom, loudest) picks which overlapping note wins; "
+            "join_repeats merges same-pitch notes that vibrato split into repeats. "
+            "Returns kept, merged and dropped note counts, onset_shift and warnings; then "
+            "use inspect_score, apply_score_patch and render_score on the project. Drums "
+            "are unpitched: use samples_hits."
+        ),
         "samples_layer": (
             "Mix samples onto a timeline into a new WAV, optionally over a base such as a "
             "score render. Placements: {sample, at, unit: bar|beat|second, gain_db, repeat, "

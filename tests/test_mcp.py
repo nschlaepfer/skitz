@@ -23,6 +23,7 @@ def test_real_stdio_mcp_score_workflow(tmp_path):
                     "apply_score_patch",
                     "render_score",
                     "export_project",
+                    "samples_transcribe",
                 } <= names
                 result = await client.call_tool(
                     "create_project",
