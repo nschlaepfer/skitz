@@ -7,9 +7,9 @@
   skitz auth logout suno     forget the saved Suno login
 
 ChatGPT uses OAuth in your browser. Suno has no sign-in for outside apps, so Skitz
-opens Suno's login page and watches your clipboard: press Cmd-A, Cmd-C on that page
-and it connects. The login is checked with Suno, then saved privately (mode 600).
-Add --json for machine-readable output.
+opens its own Chrome window (a separate profile under ~/.skitz): sign in to Suno
+there and Skitz connects by itself, then closes the window. The session is checked
+with Suno and saved privately (mode 600). Add --json for machine-readable output.
 """
 
 import argparse
@@ -24,19 +24,18 @@ from collections.abc import Callable
 
 import httpx
 
-from . import suno
+from . import browser_login, suno
 
 SUNO_SIGN_IN = "https://suno.com/me"
 SUNO_COOKIE_PAGE = f"{suno.CLERK_BASE}/v1/client"
 
 SUNO_STEPS = f"""
-Connect Suno
-  On the page that just opened ({SUNO_COOKIE_PAGE}),
-  press Cmd-A then Cmd-C. Skitz is watching your clipboard and connects as soon
-  as you copy. Nothing to paste, no Enter.
-
-  Not working? Sign in at https://suno.com (sign out and back in if you already
-  are), reload that page and copy it again.
+Connect Suno (no Chrome found, so this is the manual way)
+  1. Sign in at https://suno.com in your browser.
+  2. Open {SUNO_COOKIE_PAGE}, then DevTools (Option-Cmd-I) > Application >
+     Cookies > {suno.CLERK_BASE}, click the row named exactly __client and copy
+     its value.
+  Skitz is watching your clipboard and connects as soon as you copy it.
 
 Waiting for the copy... (Ctrl-C to cancel)
 """
@@ -49,14 +48,11 @@ def normalize_suno_cookie(text: str) -> str:
     if not value:
         raise ValueError("Nothing was pasted.")
     if value.startswith("{") or '"response"' in value:
-        # Right after a sign-in, Suno's login page embeds the __client value in its
-        # sign-in redirect URL, so copying the whole page is enough.
-        embedded = re.search(r"[?&]__client=([A-Za-z0-9._-]{20,})", value)
-        if embedded:
-            return f"__client={embedded[1]}"
+        # The page text holds a one-time sign-in token that Suno does not accept as a
+        # session (verified October 2026), so only the cookie itself works.
         raise ValueError(
-            "That copy of the page doesn't include your login. Sign out of suno.com, sign "
-            "back in, then reload the page and copy it again."
+            "That is the page text, not the cookie. Copy the __client value from DevTools > "
+            "Application > Cookies (and don't share that page text: it holds a token)."
         )
     match = re.search(r"(?:^|;\s*)__client=([^;\s]+)", value)
     if match:
@@ -116,7 +112,7 @@ def _check(raw: str, transport: httpx.BaseTransport | None) -> tuple[str, dict]:
         return cookie, suno.SunoClient(cookie, transport).billing()
     except suno.SunoError as error:
         if error.kind == "auth_expired":
-            error.message += " Sign out of suno.com, sign back in, and copy the page again."
+            error.message += f" Copy __client from {suno.CLERK_BASE} while signed in."
         raise
 
 
@@ -124,6 +120,7 @@ def _connected(cookie: str, info: dict) -> dict:
     return {
         "status": "connected",
         "provider": "suno",
+        "method": "session cookie",
         "plan": info.get("plan"),
         "credits": info.get("credits"),
         "saved_to": str(suno.save_cookie(cookie)),
@@ -134,6 +131,33 @@ def _looks_like_suno_login(text: str) -> bool:
     return "__client" in text or '"response"' in text or bool(re.fullmatch(r"eyJ[\w.-]{20,}", text))
 
 
+BROWSER_STEPS = """
+Connect Suno
+  A Skitz Chrome window just opened on Suno's sign-in page. Sign in there as usual.
+  When you see your Suno library, come back here and press Enter
+  (or quit that Chrome window with Cmd-Q).
+  It is a separate Chrome profile: Skitz never reads your everyday browser.
+
+Waiting for you to sign in... (Ctrl-C to cancel)
+"""
+
+
+def _login_in_skitz_browser(transport: httpx.BaseTransport | None, timeout: float) -> dict:
+    def accept(header: str) -> dict | None:
+        try:
+            return suno.SunoClient(header, transport).billing()
+        except suno.SunoError:
+            return None  # signed out, or the sign-in is still finishing
+
+    try:
+        header, info = browser_login.wait_for_login(
+            accept, timeout=timeout, on_waiting=lambda: print(BROWSER_STEPS, file=sys.stderr)
+        )
+    except (RuntimeError, TimeoutError) as error:
+        raise suno.SunoError("auth_missing", str(error)) from None
+    return _connected(header, info)
+
+
 def login_suno(
     value: str | None = None,
     transport: httpx.BaseTransport | None = None,
@@ -141,6 +165,7 @@ def login_suno(
     clipboard: Callable[[], str] = read_clipboard,
     sleep: Callable[[float], None] = time.sleep,
     timeout: float = 600,
+    use_browser: bool = True,
 ) -> dict:
     """Save a working Suno login.
 
@@ -158,6 +183,8 @@ def login_suno(
         except suno.SunoError as error:
             raise suno.SunoError("auth_missing", error.message) from None
 
+    if use_browser and browser_login.find_chrome():
+        return _login_in_skitz_browser(transport, timeout)
     open_url(SUNO_COOKIE_PAGE)
     print(SUNO_STEPS, file=sys.stderr)
     deadline = time.monotonic() + timeout

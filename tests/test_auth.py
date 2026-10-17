@@ -11,7 +11,7 @@ VALID = "eyJhbGciOiJSUzI1NiJ9.client-cookie-value.signature"
 def fake_suno(request: httpx.Request) -> httpx.Response:
     """Clerk accepts only the VALID __client cookie; billing reports a Pro plan."""
     if request.url.host == "auth.suno.com":
-        if request.headers.get("cookie") != f"__client={VALID}":
+        if f"__client={VALID}" not in request.headers.get("cookie", "").split("; "):
             return httpx.Response(200, json={"response": {"sessions": []}})
         if request.url.path == "/v1/client":
             return httpx.Response(200, json={"response": {"last_active_session_id": "sess"}})
@@ -46,7 +46,7 @@ def test_any_reasonable_paste_becomes_the_client_cookie(pasted):
 @pytest.mark.parametrize(
     ("pasted", "hint"),
     [
-        ('{"response": {"object": "client"}}', "doesn't include your login"),
+        ('{"response": {"object": "client"}}', "page text, not the cookie"),
         ("__client_uat=1790219982; other=1", "found: __client_uat, other"),
         ("not-a-cookie", "doesn't look like"),
         ("   ", "Nothing was pasted"),
@@ -90,35 +90,30 @@ def watch(clipboard_values, **kwargs):
 
     opened = []
     kwargs.setdefault("timeout", 2)  # never let a failing test wait out the real timeout
+    kwargs.setdefault("use_browser", False)
     result = auth_cli.login_suno(
         None, T, open_url=opened.append, clipboard=clipboard, sleep=lambda _: None, **kwargs
     )
     return result, opened
 
 
-def test_copying_the_page_connects_without_any_typing(home, monkeypatch, capsys):
+def test_copying_the_cookie_connects_without_any_typing(home, monkeypatch, capsys):
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    result, opened = watch(["some unrelated text", page(None), page(VALID)])
+    result, opened = watch(["some unrelated text", page(None), VALID])
     assert result["status"] == "connected" and result["plan"] == "Pro Plan"
     assert opened == [auth_cli.SUNO_COOKIE_PAGE]
     assert (home / "suno/cookie").read_text() == f"__client={VALID}"
     err = capsys.readouterr().err
-    assert "Cmd-A then Cmd-C" in err
-    assert "doesn't include your login" in err  # the copy without the embedded login
+    assert "DevTools" in err
+    assert "page text, not the cookie" in err  # a copy of the page gets a clear hint
     assert "unrelated" not in err  # other clipboard contents are ignored silently
-
-
-def test_copying_the_cookie_value_from_devtools_also_works(home, monkeypatch):
-    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    result, _ = watch([VALID])
-    assert result["status"] == "connected"
 
 
 def test_a_rejected_login_keeps_waiting_for_a_good_one(home, monkeypatch, capsys):
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
-    result, _ = watch([page("eyJ" + "x" * 40), page(VALID)])
+    result, _ = watch(["eyJ" + "x" * 40, VALID])
     assert result["status"] == "connected"
-    assert "sign back in" in capsys.readouterr().err
+    assert "while signed in" in capsys.readouterr().err
 
 
 def test_watching_gives_up_after_the_timeout(home, monkeypatch):
@@ -130,7 +125,7 @@ def test_watching_gives_up_after_the_timeout(home, monkeypatch):
 
 
 def test_rejected_session_is_not_saved(home):
-    with pytest.raises(suno.SunoError, match="sign back in"):
+    with pytest.raises(suno.SunoError, match="while signed in"):
         auth_cli.login_suno("x" * 40, T)
     assert not (home / "suno/cookie").exists()
 
@@ -158,5 +153,34 @@ def test_skitz_login_suno_shortcut(home, monkeypatch, capsys):
     assert calls == [["login", "suno", "--value", "x"], ["logout", "suno"]]
 
 
-def test_whole_page_copy_yields_the_embedded_client():
-    assert auth_cli.normalize_suno_cookie(page(VALID)) == f"__client={VALID}"
+def test_page_copy_is_rejected_because_suno_ignores_its_token():
+    with pytest.raises(ValueError, match="page text"):
+        auth_cli.normalize_suno_cookie(page(VALID))
+
+
+def test_browser_login_saves_the_auth_cookies(home, monkeypatch):
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(auth_cli.browser_login, "find_chrome", lambda: "/fake/chrome")
+
+    def fake_wait(accept, timeout, on_waiting):
+        on_waiting()
+        assert accept("__client=wrong") is None  # rejected sessions keep the window open
+        header = f"__client={VALID}; __client_uat=1"
+        return header, accept(header)
+
+    monkeypatch.setattr(auth_cli.browser_login, "wait_for_login", fake_wait)
+    result = auth_cli.login_suno(None, T)
+    assert result["status"] == "connected" and result["plan"] == "Pro Plan"
+    assert (home / "suno/cookie").read_text() == f"__client={VALID}; __client_uat=1"
+
+
+def test_auth_cookie_header_picks_only_auth_suno_com():
+    from skitz_music.browser_login import auth_cookie_header
+
+    cookies = [
+        {"name": "__client", "value": "abc", "domain": "auth.suno.com"},
+        {"name": "__client_uat", "value": "1", "domain": ".suno.com"},
+        {"name": "other", "value": "x", "domain": "example.com"},
+    ]
+    assert auth_cookie_header(cookies) == "__client=abc"
+    assert auth_cookie_header(cookies[1:]) is None
