@@ -1,13 +1,13 @@
 """Local MCP tools for Codex and other MCP clients. No model or API key required."""
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from .service import MusicService
 
 
-def create_server(workspace: str) -> FastMCP:
+def create_server(workspace: str) -> MCPServer:
     service = MusicService(workspace)
-    server = FastMCP(
+    server = MCPServer(
         "Skitz",
         instructions="Editable music operations. Inspect revisions before edits; preserve protected tracks.",
     )

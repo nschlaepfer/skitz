@@ -32,9 +32,9 @@ def test_real_stdio_mcp_score_workflow(tmp_path):
                         "protected_tracks": ["soprano"],
                     },
                 )
-                assert not result.isError
+                assert not result.is_error
                 result = await client.call_tool("inspect_score", {"project": "piece"})
-                assert not result.isError
+                assert not result.is_error
                 data = json.loads(result.content[0].text)
                 revision = data["revision"]
                 protected = await client.call_tool(
@@ -47,7 +47,7 @@ def test_real_stdio_mcp_score_workflow(tmp_path):
                         "reason": "negative control",
                     },
                 )
-                assert protected.isError
+                assert protected.is_error
                 edited = await client.call_tool(
                     "apply_score_patch",
                     {
@@ -58,9 +58,9 @@ def test_real_stdio_mcp_score_workflow(tmp_path):
                         "reason": "inject test error",
                     },
                 )
-                assert not edited.isError
+                assert not edited.is_error
                 analysis = await client.call_tool("analyze_voice_leading", {"project": "piece"})
-                assert not analysis.isError
+                assert not analysis.is_error
                 assert "parallel_octave" in analysis.content[0].text
 
     asyncio.run(check())
