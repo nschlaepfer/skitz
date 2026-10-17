@@ -98,7 +98,7 @@ function truncate(text: string, width: number): string {
 /** Widget lines for one moment of playback: 4 rows of bars and a title line. */
 export function visualizerLines(state: PlaybackState, now: number = Date.now()): string[] {
 	const frames = state.frames ?? [];
-	const elapsed = now / 1000 - state.started_at;
+	const elapsed = Math.min(now / 1000 - state.started_at, state.seconds ?? Number.POSITIVE_INFINITY);
 	const levels = frames[Math.floor(elapsed * (state.fps ?? 20))] ?? new Array(frames[0]?.length ?? 32).fill(0);
 	// Two columns per band: 64 columns for the usual 32 bands.
 	const wide = levels.flatMap((level) => [level, level]);

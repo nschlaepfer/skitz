@@ -98,7 +98,7 @@ def run_terminal(data: dict, process, title: str, height: int = 6, started: floa
     out.write("\x1b[?25l" + "\n" * lines)  # hide cursor, reserve space
     try:
         while process.poll() is None:
-            elapsed = time.monotonic() - started
+            elapsed = min(time.monotonic() - started, data["seconds"])
             levels = frame_at(data, elapsed) or [0] * data["bands"]
             rows = render_bars([lv for lv in levels for _ in (0, 1)], height, color)
             clock = f"{int(elapsed // 60)}:{int(elapsed % 60):02d} / "
