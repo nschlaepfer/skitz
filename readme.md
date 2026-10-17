@@ -158,9 +158,36 @@ of weights to `~/.skitz/models/separation`. The default checkpoint has no stated
 license, so treat its stems as personal-use. A placement is
 `SAMPLE:AT[b|q|s][:xREPEAT/EVERY][:GAINdB]`, in 0-based bars (default), beats (`q`)
 or seconds (`s`). `--plan` takes the same placements as JSON. Outputs are 16-bit
-44.1 kHz WAVs, each with a manifest of source hashes, cut points and settings. MCP
-clients get `samples_info`, `samples_loops`, `samples_hits`, `samples_slice` and
-`samples_layer` and `samples_stems`.
+44.1 kHz WAVs, each with a manifest of source hashes, cut points and settings.
+
+`transcribe` turns a pitched stem back into an editable score project, so a Suno
+song's bass line or vocal melody can be inspected, patched and rendered like any
+other Skitz score:
+
+```sh
+uv run skitz samples transcribe stems/song/bass.wav --out projects/song-bass
+uv run skitz suno downbeats <clip-id> > beats.json
+uv run skitz samples transcribe stems/song/vocals.wav --downbeats beats.json \
+  --out projects/song-vocals
+uv run skitz samples transcribe stems/song/piano.wav --tracks 3 --grid 8 \
+  --bpm 92 --offset 0.41 --out projects/song-piano
+```
+
+It runs Spotify's [basic-pitch](https://github.com/spotify/basic-pitch) 0.4.0
+(Apache-2.0) in its own uv tool environment, using its CoreML model on Apple
+Silicon: about 10 s for 3 minutes of audio, after a first-run install of about
+350 MB. Tempo comes from `--bpm`, `--downbeats`, the BPM recorded for the clip or
+its stems, or an estimate; `--offset` sets the first downbeat. Notes snap to
+`--grid` (16 = sixteenths; 12 and 24 are triplets) and each track is one monophonic
+line with explicit rests and ties over bar lines. Overlaps keep the lowest note for
+bass, the loudest for vocals and the highest otherwise (`--line`), and `--tracks N`
+splits chords into N tracks. The project's `transcribe-manifest.json` records the
+source hash, model version, grid, and every note merged or dropped; the raw notes
+are kept as MIDI. Transcription is an estimate, best on clean single-instrument
+stems; drums are refused (use `hits`).
+
+MCP clients get `samples_info`, `samples_loops`, `samples_hits`, `samples_slice`,
+`samples_layer`, `samples_stems` and `samples_transcribe`.
 
 ## Rendering
 

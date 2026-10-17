@@ -8,6 +8,8 @@ Typical flow:
   skitz samples loops songs/drums/<clip>.mp3 --bars 2 --out samples/drums
   skitz samples hits songs/drums/<clip>.mp3 --out samples/drum-hits
   skitz samples layer out/beat.wav --bpm 90 --bars 8 --place samples/drums/<loop>.wav:0:x4/2
+  skitz samples stems songs/<song>.mp3 --out stems/song
+  skitz samples transcribe stems/song/bass.wav --out projects/song-bass
 """
 
 import argparse
@@ -16,6 +18,7 @@ import re
 from pathlib import Path
 
 from . import samples
+from .transcribe import GRIDS, LINES, transcribe
 
 PLACE = re.compile(
     r"^(?P<sample>.+?):(?P<at>[\d.]+)(?P<unit>[bsq]?)"
@@ -85,6 +88,44 @@ def parser() -> argparse.ArgumentParser:
     )
     stems.add_argument("--models", action="store_true", help="List presets and exit")
 
+    notes = commands.add_parser(
+        "transcribe", help="Turn audio (e.g. a stem) into an editable score project"
+    )
+    notes.add_argument("source")
+    notes.add_argument("-o", "--out", required=True, help="New project folder")
+    notes.add_argument(
+        "--stem", help="vocals, bass, guitar, piano, ... (default: from the file name)"
+    )
+    notes.add_argument("--bpm", type=float, help="Default: recorded or Suno BPM, else estimated")
+    notes.add_argument("--offset", type=float, help="Seconds to the first downbeat (bar 1)")
+    notes.add_argument(
+        "--downbeats", help="JSON saved from `skitz suno downbeats <id>`: bpm, offset, meter"
+    )
+    notes.add_argument("--meter", help="Default 4/4, or the downbeats' beats per bar")
+    notes.add_argument(
+        "--grid", type=int, default=16, choices=GRIDS,
+        help="Shortest note value: 4, 8, 16 (default) or 32; 12 and 24 are triplets",
+    )  # fmt: skip
+    notes.add_argument(
+        "--tracks", type=int, default=1, help="Split chords into up to N monophonic tracks"
+    )
+    notes.add_argument(
+        "--line", choices=LINES,
+        help="Which overlapping note wins (default: bottom for bass, loudest for vocals, else top)",
+    )  # fmt: skip
+    notes.add_argument("--key", help='Key for spelling, e.g. "g minor" (default: estimated)')
+    notes.add_argument("--title")
+    notes.add_argument("--program", type=int, help="General MIDI program (default by stem)")
+    notes.add_argument("--onset-threshold", type=float, default=0.5, help="basic-pitch, 0-1")
+    notes.add_argument("--frame-threshold", type=float, default=0.3, help="basic-pitch, 0-1")
+    notes.add_argument(
+        "--min-note-ms", type=float, help="basic-pitch; default 3/4 of a grid step, max 127.7"
+    )
+    notes.add_argument(
+        "--join-repeats", action="store_true",
+        help="Merge same-pitch notes that touch (vibrato split into repeats)",
+    )  # fmt: skip
+
     cut = commands.add_parser("slice", help="Cut one region by seconds")
     cut.add_argument("source")
     cut.add_argument("start", type=float)
@@ -143,6 +184,26 @@ def run(args: argparse.Namespace) -> dict:
         if args.models:
             return {"presets": PRESETS}
         return separate(args.source, args.out, args.model, args.drumkit)
+    if args.command == "transcribe":
+        return transcribe(
+            args.source,
+            args.out,
+            stem=args.stem,
+            bpm=args.bpm,
+            offset=args.offset,
+            meter=args.meter,
+            grid=args.grid,
+            tracks=args.tracks,
+            line=args.line,
+            key=args.key,
+            title=args.title,
+            program=args.program,
+            downbeats=args.downbeats,
+            onset_threshold=args.onset_threshold,
+            frame_threshold=args.frame_threshold,
+            min_note_ms=args.min_note_ms,
+            join_repeats=args.join_repeats,
+        )
     if args.command == "slice":
         return samples.slice_sample(
             args.source, args.out, args.start, args.end, args.name, normalize=args.normalize
