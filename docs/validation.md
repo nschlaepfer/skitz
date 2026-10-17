@@ -6,9 +6,10 @@ LilyPond 2.26.0; FluidSynth 2.6.0. Prime commit and SoundFont hashes are in
 
 ## Source and Runtime
 
-- All 1,258 tracked upstream files are present. Only `packages/ai/src/stream.ts`
+- At the initial refactor, all 1,258 tracked upstream files were present. Only `packages/ai/src/stream.ts`
   and `packages/coding-agent/src/cli-main.ts` differ from the imported commit;
-  additional regression/change-fragment files are documented.
+  additional regression/change-fragment files were documented. Subsequent product
+  branding changes are listed separately in `upstream.md`.
 - Original Skitz files and examples were checked against Git HEAD byte-for-byte.
 - Root Python tests cover schema, edits, concurrency, import, rendering, MCP,
   benchmark conditions and export/verification.

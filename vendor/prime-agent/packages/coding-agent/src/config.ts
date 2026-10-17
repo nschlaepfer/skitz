@@ -14,6 +14,7 @@ import {
 import { homedir } from "os";
 import { basename, dirname, join, posix, resolve, sep, win32 } from "path";
 import { fileURLToPath } from "url";
+import { IS_SKITZ } from "./product.js";
 import { shouldUseWindowsShell, spawnSyncHidden } from "./utils/child-process.js";
 import { normalizeSocketPath } from "./utils/daemon-socket-path.js";
 
@@ -490,9 +491,9 @@ const envPrefix =
 		.replace(/[^A-Z0-9]+/g, "_")
 		.replace(/^_+|_+$/g, "") || "PI";
 export const PACKAGE_NAME: string = pkg.name || "@earendil-works/pi-coding-agent";
-export const APP_NAME: string = piConfigName || "pi";
-export const APP_TITLE: string = piConfigName ? APP_NAME : "π";
-export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".prime/agent";
+export const APP_NAME: string = IS_SKITZ ? "skitz" : piConfigName || "pi";
+export const APP_TITLE: string = IS_SKITZ ? "Skitz" : piConfigName ? APP_NAME : "π";
+export const CONFIG_DIR_NAME: string = IS_SKITZ ? ".skitz/agent" : pkg.piConfig?.configDir || ".prime/agent";
 export const VERSION: string = pkg.version || "0.0.0";
 
 // e.g., PI_CODING_AGENT_DIR or PRIME_AGENT_CODING_AGENT_DIR

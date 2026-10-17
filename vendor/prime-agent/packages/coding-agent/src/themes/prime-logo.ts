@@ -5,8 +5,13 @@
  * Re-render at any width: `uv run scripts/render-logo.py --width N`
  */
 
-/** ~10 rows × 32 cols. The default brand mark — half-block butterfly, splash-ready. */
-export const PRIME_BUTTERFLY_LOGO = `                          ▄▄███▀
+import { IS_SKITZ } from "../product.js";
+import { SKITZ_LOGO } from "./skitz-logo.js";
+
+/** Keep the inherited export contract while choosing the active product's mark. */
+export const PRIME_BUTTERFLY_LOGO = IS_SKITZ
+	? SKITZ_LOGO
+	: `                          ▄▄███▀
     ▄▄▄▄▄              ▄█████▀
     ██████▄         ▄██████▀
    ▄███▀███▄     ▄███▀▄██▀

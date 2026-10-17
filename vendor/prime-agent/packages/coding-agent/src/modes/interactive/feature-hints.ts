@@ -1,4 +1,5 @@
 import type { AppKeybinding } from "../../core/keybindings.js";
+import { IS_SKITZ, PRODUCT_LABEL } from "../../product.js";
 
 export interface FeatureHintContext {
 	getKeybinding(action: AppKeybinding): string | undefined;
@@ -40,7 +41,7 @@ export const FEATURE_HINTS: readonly FeatureHintDefinition[] = [
 	},
 	{
 		id: "subagents",
-		getText: () => "Prime Agent can delegate tasks to subagents and run them in parallel.",
+		getText: () => `${PRODUCT_LABEL} can delegate tasks to subagents and run them in parallel.`,
 	},
 	{
 		id: "agents-view",
@@ -72,7 +73,8 @@ export const FEATURE_HINTS: readonly FeatureHintDefinition[] = [
 	},
 	{
 		id: "trace-sharing",
-		getText: () => "Share traces with Prime Intellect using /traces on to train open-source LLMs.",
+		getText: () =>
+			IS_SKITZ ? undefined : "Share traces with Prime Intellect using /traces on to train open-source LLMs.",
 	},
 	{
 		id: "persistent-ipython",
@@ -92,11 +94,11 @@ export const FEATURE_HINTS: readonly FeatureHintDefinition[] = [
 	},
 	{
 		id: "auto-compaction",
-		getText: () => "Prime Agent automatically compacts long sessions before context fills up.",
+		getText: () => `${PRODUCT_LABEL} automatically compacts long sessions before context fills up.`,
 	},
 	{
 		id: "auto-refine",
-		getText: () => "Prime Agent self-improves by refining skills, memories, prompts, and subagents.",
+		getText: () => `${PRODUCT_LABEL} self-improves by refining skills, memories, prompts, and subagents.`,
 	},
 	{
 		id: "background-running",

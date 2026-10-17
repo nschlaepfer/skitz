@@ -370,6 +370,10 @@ def layer(
         start = to_seconds(placement.get("at", 0), unit)
         step = to_seconds(placement.get("every", 0), unit)
         repeat = int(placement.get("repeat", 1))
+        if start < 0:
+            raise ValueError(f"Placement 'at' must not be negative: {placement}")
+        if repeat < 1:
+            raise ValueError(f"Placement 'repeat' must be at least 1: {placement}")
         if repeat > 1 and step <= 0:
             raise ValueError("A repeated placement needs a positive 'every'")
         gain = 10 ** (float(placement.get("gain_db", 0)) / 20)

@@ -1,6 +1,6 @@
 # Skitz
 
-A terminal music agent built on Prime Agent. Sign in with your **ChatGPT
+A terminal music agent. Sign in with your **ChatGPT
 subscription**, compose an editable score, render it, and make revisions that
 preserve protected tracks. No OpenAI API key is needed or used by the launcher.
 
@@ -29,9 +29,12 @@ Example request:
 
 The initial model is Prime's pinned Codex default, `gpt-5.5`. Select another
 subscription model with `uv run skitz agent --model <model-id>` or `SKITZ_MODEL`.
-API-key providers and overrides are blocked. Prime's inherited help and TUI
-currently retain some upstream branding and provider menu entries; non-Codex
-provider calls are rejected in the runtime.
+API-key providers and overrides are blocked. The terminal mark, window title,
+help and subscription menu use the Skitz identity. First launch signs in with
+ChatGPT rather than opening an upstream onboarding flow. Internal runtime package
+names and protocol versions are preserved; the terminal's version label currently
+shows the pinned engine version. Some inherited coding-oriented prompts and
+advanced diagnostic text remain for a later music-interface pass.
 
 ## Music Tools
 
