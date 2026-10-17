@@ -105,6 +105,7 @@ def main() -> int:
     play.add_argument("target", nargs="?", help="Project folder or audio file")
     play.add_argument("--background", action="store_true", help="Return while it plays")
     play.add_argument("--stop", action="store_true", help="Stop background playback")
+    play.add_argument("--visualize", "-v", action="store_true", help="Show live spectrum bars")
     commands.add_parser(
         "auth", help="Connect providers: skitz auth login suno|chatgpt, skitz auth", add_help=False
     )
@@ -190,7 +191,7 @@ def main() -> int:
             elif not args.target:
                 parser.error("play needs a project folder or audio file")
             else:
-                result = playback.play(args.target, args.background)
+                result = playback.play(args.target, args.background, args.visualize)
         else:
             parser.error("Unknown command")
         print(json.dumps(result, indent=2))

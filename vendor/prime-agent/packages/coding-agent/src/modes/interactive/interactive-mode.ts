@@ -135,7 +135,14 @@ import {
 	type TelemetryOnboardingOutcome,
 } from "../../core/telemetry.js";
 import { type TruncationResult, truncateTail } from "../../core/tools/truncate.js";
+import { IS_SKITZ } from "../../product.js";
 import { PRIME_BUTTERFLY_LOGO } from "../../themes/prime-logo.js";
+import {
+	skitzAnimationsEnabled,
+	skitzShimmerLine,
+	skitzSweepAt,
+	startSkitzShimmer,
+} from "../../themes/skitz-shimmer.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { spawnHidden, spawnSyncHidden } from "../../utils/child-process.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
@@ -500,7 +507,10 @@ export class BrandSplashHeader implements Component {
 		const lines = this.options.topPadding ? [""] : [];
 		lines.push(
 			...this.logoRaw.map((line, index) => {
-				const colored = theme.fg("text", line);
+				const colored =
+					IS_SKITZ && skitzAnimationsEnabled()
+						? skitzShimmerLine(line, this.logoCanvasWidth, skitzSweepAt())
+						: theme.fg("text", line);
 				const meta = index >= metaStart && index < metaStart + metaLines.length ? metaLines[index - metaStart] : "";
 				const padding = showMeta
 					? " ".repeat(Math.max(0, this.logoCanvasWidth - visibleWidth(line) + this.gutter))
@@ -1476,6 +1486,9 @@ export class InteractiveMode {
 			);
 			this.headerContainer.addChild(this.builtInHeader);
 			this.headerContainer.addChild(new Spacer(1));
+			if (IS_SKITZ && skitzAnimationsEnabled()) {
+				startSkitzShimmer(() => this.ui.requestRender());
+			}
 		} else {
 			// Quiet startup: skip the splash and surrounding padding entirely.
 			this.builtInHeader = new Text("", 0, 0);

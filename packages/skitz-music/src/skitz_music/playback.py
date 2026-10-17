@@ -3,7 +3,8 @@
 `skitz play <project>` plays the newest audio render of the project's current
 revision; `skitz play <file>` plays any audio file. Playback uses afplay on macOS,
 or ffplay / paplay / aplay elsewhere. One background playback at a time is tracked
-so the agent can stop it.
+so the agent can stop it. While it plays, `~/.skitz/playback.json` holds the file's
+spectrum frames so the Skitz agent screen can draw a live visualizer.
 """
 
 import json
@@ -11,6 +12,8 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
+import time
 from pathlib import Path
 
 AUDIO_SUFFIXES = {".wav", ".mp3", ".m4a", ".aif", ".aiff", ".flac", ".ogg"}
@@ -58,12 +61,21 @@ def resolve(target: str | Path) -> Path:
     raise ValueError(f"Not an audio file or Skitz project: {target}")
 
 
+def _state_dir() -> Path:
+    return Path(os.environ.get("SKITZ_STATE", str(Path.home() / ".skitz")))
+
+
 def _pid_file() -> Path:
-    return Path(os.environ.get("SKITZ_STATE", str(Path.home() / ".skitz"))) / "playback.pid"
+    return _state_dir() / "playback.pid"
+
+
+def state_file() -> Path:
+    return _state_dir() / "playback.json"
 
 
 def stop() -> dict:
     pid_file = _pid_file()
+    state_file().unlink(missing_ok=True)
     if not pid_file.is_file():
         return {"status": "nothing_playing"}
     try:
@@ -75,19 +87,48 @@ def stop() -> dict:
     return {"status": status}
 
 
-def play(target: str | Path, background: bool = False) -> dict:
+def play(target: str | Path, background: bool = False, visualize: bool = False) -> dict:
     path = resolve(target)
     command = player_command(path)
-    if not background:
-        code = subprocess.call(command)
+    if background:
+        stop()
+        # Analyze first so the visualizer and the audio start together.
+        from .visualize import animations_enabled, spectrum_frames
+
+        frames = None
+        if animations_enabled():
+            try:
+                frames = spectrum_frames(path)
+            except (RuntimeError, ValueError, OSError):
+                frames = None
+        process = subprocess.Popen(
+            command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
+        )
+        started = time.time()
+        _pid_file().parent.mkdir(parents=True, exist_ok=True)
+        _pid_file().write_text(str(process.pid))
+        state = {"pid": process.pid, "path": str(path), "title": path.name, "started_at": started}
+        if frames:
+            state.update(frames)
+        temp = state_file().with_suffix(".tmp")
+        temp.write_text(json.dumps(state))
+        temp.replace(state_file())
+        return {"status": "playing", "path": str(path), "pid": process.pid}
+    if visualize and sys.stdout.isatty():
+        from .visualize import run_terminal, spectrum_frames
+
+        data = spectrum_frames(path)
+        process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            run_terminal(data, process, path.name, started=time.monotonic())
+            code = process.wait()
+        except KeyboardInterrupt:
+            process.terminate()
+            process.wait(timeout=5)
+            return {"status": "stopped", "path": str(path)}
         return {"status": "played" if code == 0 else "failed", "path": str(path)}
-    stop()
-    process = subprocess.Popen(
-        command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True
-    )
-    _pid_file().parent.mkdir(parents=True, exist_ok=True)
-    _pid_file().write_text(str(process.pid))
-    return {"status": "playing", "path": str(path), "pid": process.pid}
+    code = subprocess.call(command)
+    return {"status": "played" if code == 0 else "failed", "path": str(path)}
 
 
 class PlaybackService:
