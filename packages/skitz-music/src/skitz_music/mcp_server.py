@@ -72,13 +72,27 @@ def create_server(workspace: str) -> MCPServer:
         "suno_credits": "Check the user's Suno session and remaining credits.",
         "suno_generate": (
             "Generate a song on the user's Suno account (2 clips; spends credits). Give "
-            "description, or lyrics/tags/title. With output_dir, waits and saves mp3s and a "
-            "manifest there; otherwise returns clip ids. Set bpm (and usually instrumental) "
-            "when the clips will be cut into samples. A captcha_required or auth_expired "
-            "error needs the user to act; never try to work around it."
+            "description, or lyrics/tags/title. With output_dir, waits and saves the audio and "
+            "a manifest there; otherwise returns clip ids. Set bpm (and usually instrumental) "
+            "when the clips will be cut into samples. Suno makes users download songs in the "
+            "browser: set wait_for_browser to open the song pages and wait while you ask the "
+            "user to click Download on each. A captcha_required or auth_expired error needs "
+            "the user to act; never try to work around it."
         ),
         "suno_status": "Show the status and audio URLs of Suno clips by id.",
-        "suno_wait": "Wait for Suno clips to finish; with output_dir, save mp3s and a manifest.",
+        "suno_wait": (
+            "Wait for Suno clips to finish; with output_dir, save the audio and a manifest "
+            "(wait_for_browser: open the song pages and wait for the user's downloads)."
+        ),
+        "suno_download": (
+            "Save finished Suno clips into output_dir with a manifest (BPM and request kept). "
+            "Suno no longer serves song audio to API clients: its Download button builds the "
+            "file in the browser, so this imports the user's downloads from ~/Downloads or "
+            "~/.skitz/suno/inbox, matched by the clip id Suno embeds. Missing songs return "
+            "download_restricted with song_urls: ask the user to click Download there, or call "
+            "with wait_for_browser=true to open the pages and wait (up to timeout seconds)."
+        ),
+        "suno_inbox": "List Suno songs already downloaded to ~/Downloads or the inbox, by clip id.",
         "suno_lyrics": "Have Suno write song lyrics from a prompt (no credits).",
         "suno_stems": (
             "List the 12 stems (2 variants each) the user made for a clip on suno.com (Edit > "

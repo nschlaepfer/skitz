@@ -10,7 +10,7 @@ import base64
 import hashlib
 import json
 import os
-import re
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -116,10 +116,16 @@ def _jwt_expiry(token: str) -> float:
 
 
 RESTRICTED_MESSAGE = (
-    "Suno no longer lets API clients download audio: clips and stems come back with "
-    "audio_url set to /api/forbidden, and media_urls are encrypted for the web player "
-    "(seen October 2026). Use Download on suno.com (Get Stems > Download for stems), "
-    "then run `skitz samples` on the files."
+    "Suno no longer serves audio to API clients (audio_url is /api/forbidden since October "
+    "2026); its Download button builds the file in the browser. Click Download on each page "
+    "in song_urls: Skitz picks the files up from ~/Downloads or ~/.skitz/suno/inbox by the "
+    "clip id Suno embeds in them. Then rerun, or pass --wait-for-browser (MCP: "
+    "wait_for_browser) to open the pages and wait for the files."
+)
+STEMS_RESTRICTED_MESSAGE = (
+    "Suno no longer lets API clients download stems: they come back with audio_url set to "
+    "/api/forbidden and are encrypted for the web player. Use Get Stems > Download on "
+    "suno.com, or split the song locally with `skitz samples stems`."
 )
 
 
@@ -407,36 +413,69 @@ class SunoClient:
             self.sleep(2)
         raise SunoError("timeout", "Timed out waiting for lyrics.", id=job["id"])
 
-    def download(self, clips: list[dict], directory: Path, request: dict | None = None) -> dict:
-        """Save mp3s plus a manifest recording the request, clip metadata and hashes."""
+    def download(
+        self,
+        clips: list[dict],
+        directory: Path,
+        request: dict | None = None,
+        wait_for_browser: bool = False,
+        timeout: float = 600,
+        open_pages: bool = True,
+    ) -> dict:
+        """Save finished clips plus a manifest of the request, clip metadata and hashes.
+
+        Clips Suno still serves are fetched. The rest (audio_url /api/forbidden) come from
+        the user's own downloads, matched by the clip id Suno embeds; with
+        `wait_for_browser`, their song pages are opened and this waits for the files.
+        """
+        from . import suno_inbox
+
         directory.mkdir(parents=True, exist_ok=True)
-        files = []
+        files, restricted = [], []
         for clip in clips:
-            if (clip.get("audio_url") or "").endswith("/forbidden"):
-                raise SunoError("download_restricted", RESTRICTED_MESSAGE, id=clip.get("id"))
             if not clip.get("audio_url"):
                 continue
-            name = re.sub(r"[^A-Za-z0-9_-]+", "-", clip.get("title") or "untitled").strip("-")
-            path = directory / f"{name or 'untitled'}-{clip['id'][:8]}.mp3"
-            digest = hashlib.sha256()
+            if clip["audio_url"].endswith("/forbidden"):
+                restricted.append(clip)
+                continue
             url, extension = audio_source(clip)
-            path = path.with_suffix(extension)
+            path = directory / suno_inbox.file_name(clip, extension)
+            digest = hashlib.sha256()
             with self.http.stream("GET", url) as response:
                 response.raise_for_status()
                 with path.open("wb") as handle:
                     for chunk in response.iter_bytes():
                         handle.write(chunk)
                         digest.update(chunk)
-            files.append({"clip_id": clip["id"], "path": str(path), "sha256": digest.hexdigest()})
-        manifest = {
-            "source": "suno",
-            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "request": request,
-            "clips": [slim(clip) for clip in clips],
-            "files": files,
-        }
-        (directory / "manifest.json").write_text(json.dumps(manifest, indent=2))
-        return {"directory": str(directory), "files": files}
+            files.append({
+                "clip_id": clip["id"], "path": str(path), "sha256": digest.hexdigest(),
+                "origin": "suno_cdn", "request": request or suno_inbox.recalled_request(clip["id"]),
+            })  # fmt: skip
+        if restricted:
+            if wait_for_browser:
+                matches = suno_inbox.wait_for_downloads(
+                    restricted,
+                    timeout,
+                    open_pages=open_pages,
+                    log=lambda m: print(m, file=sys.stderr),
+                )
+            else:
+                matches = suno_inbox.match(restricted, suno_inbox.scan())
+            files += suno_inbox.import_downloads(restricted, matches, directory)
+        suno_inbox.write_manifest(directory, clips, files, request)
+        result = {"directory": str(directory), "files": files}
+        saved = {entry["clip_id"] for entry in files}
+        missing = [clip["id"] for clip in restricted if clip["id"] not in saved]
+        if missing:
+            raise SunoError(
+                "download_restricted",
+                RESTRICTED_MESSAGE,
+                missing=missing,
+                song_urls=[suno_inbox.song_url(clip_id) for clip_id in missing],
+                watching=[str(d) for d in suno_inbox.watch_dirs()],
+                **result,
+            )
+        return result
 
 
 class SunoService:
@@ -474,15 +513,20 @@ class SunoService:
         output_dir: str | None = None,
         timeout: float = 240,
         bpm: float | None = None,
+        wait_for_browser: bool = False,
     ) -> dict:
         payload = build_payload(
             description, lyrics, tags, title, negative_tags, instrumental, model, bpm
         )
+        from .suno_inbox import remember_request
+
         clips = self.client.generate(payload)
         ids = [clip["id"] for clip in clips]
+        request = request_record(payload, bpm)
+        remember_request(ids, request)
         if not output_dir:
             return {"status": "submitted", "ids": ids, "clips": [slim(c) for c in clips]}
-        return self.suno_wait(ids, output_dir, timeout, request=request_record(payload, bpm))
+        return self.suno_wait(ids, output_dir, timeout, request, wait_for_browser)
 
     def suno_status(self, ids: list[str]) -> dict:
         return {"clips": [slim(clip) for clip in self.client.feed(ids)]}
@@ -493,6 +537,7 @@ class SunoService:
         output_dir: str | None = None,
         timeout: float = 240,
         request: dict | None = None,
+        wait_for_browser: bool = False,
     ) -> dict:
         target = self._output(output_dir) if output_dir else None
         clips = self.client.wait(ids, timeout)
@@ -502,10 +547,27 @@ class SunoService:
             "clips": [slim(c) for c in clips],
         }
         if target:
-            result.update(self.client.download(clips, target, request))
+            result.update(self.client.download(clips, target, request, wait_for_browser, timeout))
         if any(clip.get("status") in FAILED for clip in clips):
             result["status"] = "failed"
         return result
+
+    def suno_download(
+        self,
+        ids: list[str],
+        output_dir: str,
+        wait_for_browser: bool = False,
+        timeout: float = 300,
+    ) -> dict:
+        target = self._output(output_dir)
+        clips = self.client.feed(ids)
+        not_ready = [clip["id"] for clip in clips if not clip.get("audio_url")]
+        if not_ready:
+            raise SunoError("not_ready", "Some clips have no audio yet; wait first.", ids=not_ready)
+        return self.client.download(clips, target, None, wait_for_browser, timeout)
+
+    def suno_inbox(self) -> dict:
+        return inbox_listing()
 
     def suno_stems(
         self,
@@ -523,6 +585,20 @@ class SunoService:
 
     def suno_lyrics(self, prompt: str) -> dict:
         return self.client.lyrics(prompt)
+
+
+def inbox_listing() -> dict:
+    """Suno downloads found in the watched folders, by clip id."""
+    from .suno_inbox import scan, watch_dirs
+
+    found = [entry for entry in scan() if entry.get("clip_id")]
+    return {
+        "watching": [str(directory) for directory in watch_dirs()],
+        "downloads": [
+            {"clip_id": e["clip_id"], "path": str(e["path"]), "duration": round(e["duration"], 2)}
+            for e in found
+        ],
+    }
 
 
 def download_stems(
@@ -563,7 +639,7 @@ def download_stems(
                 "not_ready", "Stems are still processing; retry shortly.", clip_id=clip_id
             )
         if all(not s.get("audio_url") for s in ready):
-            raise SunoError("download_restricted", RESTRICTED_MESSAGE, clip_id=clip_id)
+            raise SunoError("download_restricted", STEMS_RESTRICTED_MESSAGE, clip_id=clip_id)
         named = [{**s, "title": s.get("stem") or s.get("title")} for s in ready]
         request = {"stem_from_id": clip_id, "variant": variant}
         result.update(client.download(named, directory, request))

@@ -112,11 +112,27 @@ uv run skitz suno lyrics "a sea shanty about debugging"
 
 **What works today (verified live, October 2026).** Credits, generation requests,
 status, lyrics, models (`skitz suno models --live`), stem listings and Suno's beat
-grid all work. **Audio downloads do not.** Suno now returns `audio_url:
-/api/forbidden` for songs and stems, and the alternative `media_urls` are encrypted
-for its web player. Skitz reports this as exit code 7 and does not try to get around
-it. Download songs or stems on suno.com (Get Stems > Download), then use
-`skitz samples` on the files. `skitz suno stems <clip>` lists a clip's 12 stems in 2
+grid all work. **Suno no longer serves audio to API clients:** it returns
+`audio_url: /api/forbidden` for songs and stems, its player stream is encrypted, and
+its Download button builds the file in the browser. Skitz never reads that stream.
+Instead it brings in the files you download: every song Suno's Download button saves
+carries its clip id in the file's metadata, so `skitz suno download` (and `--out` on
+`generate` and `wait`) finds them in `~/Downloads` or `~/.skitz/suno/inbox` by that
+id, even when two clips share a title. It copies them into the folder you name, with
+a manifest that keeps the BPM you asked for:
+
+```sh
+uv run skitz suno download <id> <id> --out songs/rain                     # files already downloaded
+uv run skitz suno download <id> --out songs/rain --wait-for-browser       # opens the song page,
+                                                                          # waits for your click
+uv run skitz suno inbox                                                   # Suno files found, by clip id
+```
+
+Songs that haven't been downloaded yet return exit code 7 with their `song_urls`. Files
+without Suno's tag (an exported WAV, say) are matched by title and length, but only
+when exactly one clip fits. Set `SKITZ_SUNO_WATCH` (folders separated by `:`) to look
+elsewhere. Stems still have to be downloaded on suno.com (Get Stems > Download) or
+split locally with `skitz samples stems`. `skitz suno stems <clip>` lists a clip's 12 stems in 2
 variants. `skitz suno downbeats <clip>` returns Suno's BPM and bar-1 offset, which
 you can pass to `samples loops --bpm --offset`. Making stems needs a captcha in the
 web app, so start them there. The default model is v6 (`chirp-hawk`), and the
@@ -125,8 +141,11 @@ cookie through `SUNO_JWT`.
 
 The cookie is saved to `~/.skitz/suno/cookie` with mode 600 (or set `SUNO_COOKIE`).
 Each download folder gets a `manifest.json` with the request, clip metadata and file
-hashes. The agent uses `skitz_music.suno`, and MCP clients get `suno_credits`,
-`suno_generate`, `suno_status`, `suno_wait` and `suno_lyrics`. When Suno asks for a
+hashes, merged by clip id, so several songs can share a folder. Every generate request
+is also recorded in `~/.skitz/suno/requests.jsonl`, so a song imported later still
+knows its BPM. The agent uses `skitz_music.suno`, and MCP clients get `suno_credits`,
+`suno_generate`, `suno_status`, `suno_wait`, `suno_download`, `suno_inbox` and
+`suno_lyrics`. When Suno asks for a
 captcha, Skitz stops with exit code 4. Create one song by hand on suno.com, then
 retry. Skitz never tries to solve or get around a captcha.
 

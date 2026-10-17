@@ -139,7 +139,8 @@ def _source_info(path: Path) -> dict:
             )
             info["suno"] = {
                 "clip_id": match and match["clip_id"],
-                "request": data.get("request"),
+                # Each file records its own request; older manifests have one for the folder.
+                "request": (match or {}).get("request") or data.get("request"),
             }
     return info
 
