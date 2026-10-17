@@ -190,8 +190,45 @@ source hash, model version, grid, and every note merged or dropped; the raw note
 are kept as MIDI. Transcription is an estimate, best on clean single-instrument
 stems; drums are refused (use `hits`).
 
-MCP clients get `samples_info`, `samples_loops`, `samples_hits`, `samples_slice`,
-`samples_layer`, `samples_stems` and `samples_transcribe`.
+#### Fit, mix and export
+
+Make samples fit the song, add effects, and take the result into Ableton Live or
+Logic Pro:
+
+```sh
+uv run skitz samples analyze songs/keys/<clip>.mp3    # estimated BPM, key/mode, chords
+uv run skitz samples fit songs/keys/<clip>.mp3 --bpm 90 --key "A minor" --out samples/keys
+uv run skitz samples fx stems/song/vocals.wav fx/vocals.wav --chain hp=120,comp=-20/3,reverb=0.15
+uv run skitz samples layer out/beat.wav --bpm 90 --bars 8 \
+  --place samples/drums/<loop01>.wav:0:x4/2 --place samples/keys/<clip>-90bpm-Am.wav:0 \
+  --fx 1:hp=40,comp=-18/4 --fx 2:lp=6000,delay=0.75q/0.3/0.2,pan=-0.2 --master comp=-14/2,limit
+uv run skitz samples export out/beat-daw --bpm 90 --bars 8 --plan plan.json --master limit
+```
+
+`analyze` estimates tempo (with half/double alternatives and the first beat), key
+and mode (with a Camelot code and runner-up keys) and one major/minor triad per bar.
+These are signal estimates, labelled as such; prefer the BPM and key you asked Suno
+for. `fit` time-stretches and pitch-shifts independently with
+[pedalboard](https://github.com/spotify/pedalboard)'s Rubber Band (or ffmpeg's
+`rubberband` filter without it). It records the source BPM and key, where they came
+from, and the tempo and pitch ratios. Between major and minor keys it moves to the
+target's relative key.
+
+Effect chains are `KEY=VALUE` pairs: `hp`/`lp` (Hz, optional `/slope`), `lowshelf`,
+`highshelf` and `peak` (`Hz/dB[/Q]`), `comp` (`threshold/ratio[/attack/release/makeup]`),
+`delay` (`time` in seconds or beats with `q`, `/feedback/mix`), `reverb` (`wet[/room]`),
+`gain`, `pan` (-1 to 1) and `limit` (a lookahead brickwall at `-1` dBFS, or
+`limit=CEILING`). `--fx N:CHAIN` applies to placement N; `--master` runs on the sum.
+In a `--plan`, placements take `pan`, `fx` (the same effects as JSON) and `track`.
+
+`export` writes the mastered mix, one 32-bit float stem per track starting at 0 s
+(after placement effects, before the master), the source samples, and
+`placements.mid` with the tempo and one MIDI track per stem. Drop the stems at bar 1
+in the DAW, or load `samples/` into a sampler and play them from the MIDI. Effects
+need pedalboard, which `npm run setup` installs (`pip install 'skitz-music[fx]'`
+elsewhere). MCP clients get `samples_info`, `samples_analyze`, `samples_fit`,
+`samples_fx`, `samples_loops`, `samples_hits`, `samples_slice`, `samples_layer`,
+`samples_export`, `samples_stems` and `samples_transcribe`.
 
 ## Rendering
 
