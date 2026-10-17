@@ -32,6 +32,11 @@ import type {
 	ToolCall,
 	ToolResultMessage,
 } from "../types.js";
+import {
+	type AssistantMessageDiagnostic,
+	appendAssistantMessageDiagnostic,
+	createAssistantMessageDiagnostic,
+} from "../utils/diagnostics.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { headersToRecord } from "../utils/headers.js";
 import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.js";
@@ -234,6 +239,45 @@ function mergeHeaders(...headerSources: (Record<string, string | null> | undefin
 		}
 	}
 	return merged;
+}
+
+/**
+ * Preserved thinking: each thinking block's signature is bound to the system prompt,
+ * tools and messages that came before it. When any of those changed after the block was
+ * made (a re-rendered system prompt, a tool set that changed, a resumed session), models
+ * with preserved thinking reject the replay with a 400. The API's documented recovery is
+ * to resend with this beta and `prefix_mismatch_behavior: "drop_block"`, which drops just
+ * the stale blocks, and to keep doing so for the rest of the session.
+ */
+const THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01";
+
+/** Sessions that hit a stale-thinking 400; their later requests drop stale blocks up front. */
+const staleThinkingSessions = new Set<string>();
+
+export function isStaleThinkingError(error: unknown): boolean {
+	if (!error || typeof error !== "object") return false;
+	const { status, message } = error as { status?: unknown; message?: unknown };
+	const body = (error as { error?: { error?: { message?: unknown } } }).error?.error?.message;
+	const text = `${typeof message === "string" ? message : ""} ${typeof body === "string" ? body : ""}`;
+	return status === 400 && /bound to a different conversation/i.test(text);
+}
+
+/** The request with stale thinking blocks dropped instead of rejected, or undefined when thinking is off. */
+export function withStaleThinkingDropped(
+	params: MessageCreateParamsStreaming,
+): MessageCreateParamsStreaming | undefined {
+	if (params.thinking?.type === "disabled") return undefined;
+	// Always-on models omit `thinking` to run at the API default, which is adaptive.
+	const thinking = params.thinking ?? { type: "adaptive" };
+	return {
+		...params,
+		thinking: { ...thinking, block_binding: { prefix_mismatch_behavior: "drop_block" } },
+	} as unknown as MessageCreateParamsStreaming;
+}
+
+/** For tests: forget which sessions needed stale thinking dropped. */
+export function resetStaleThinkingSessions(): void {
+	staleThinkingSessions.clear();
 }
 
 interface ServerSentEvent {
@@ -484,6 +528,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 		try {
 			let client: Anthropic;
 			let isOAuth: boolean;
+			let betaHeader: string | undefined;
 
 			if (options?.client) {
 				client = options.client;
@@ -510,6 +555,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 				);
 				client = created.client;
 				isOAuth = created.isOAuthToken;
+				betaHeader = created.betaHeader;
 			}
 			const { cacheControl } = getCacheControl(model, options?.cacheRetention);
 			const usesAnthropicCachePricing = hasStandardAnthropicCachePricing(model);
@@ -526,7 +572,36 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 				...(options?.signal ? { signal: options.signal } : {}),
 				...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
 			};
-			const response = await client.messages.create({ ...params, stream: true }, requestOptions).asResponse();
+			const sessionId = options?.sessionId;
+			const droppable = withStaleThinkingDropped(params);
+			let dropStale = droppable !== undefined && sessionId !== undefined && staleThinkingSessions.has(sessionId);
+			const send = (drop: boolean) =>
+				client.messages
+					.create(
+						{ ...(drop && droppable ? droppable : params), stream: true },
+						drop
+							? {
+									...requestOptions,
+									headers: { "anthropic-beta": [betaHeader, THINKING_BINDING_BETA].filter(Boolean).join(",") },
+								}
+							: requestOptions,
+					)
+					.asResponse();
+			let staleThinking: AssistantMessageDiagnostic | undefined;
+			let response: Response;
+			try {
+				response = await send(dropStale);
+			} catch (error) {
+				if (dropStale || !droppable || !isStaleThinkingError(error)) throw error;
+				// Rejected before any output, so resending is safe. Record the recovery.
+				dropStale = true;
+				if (sessionId !== undefined) staleThinkingSessions.add(sessionId);
+				staleThinking = createAssistantMessageDiagnostic("anthropic_stale_thinking_dropped", error, {
+					retried: true,
+				});
+				appendAssistantMessageDiagnostic(output, staleThinking);
+				response = await send(true);
+			}
 			await options?.onResponse?.({ status: response.status, headers: headersToRecord(response.headers) }, model);
 			const requestId = response.headers.get("request-id") ?? undefined;
 			stream.push({ type: "start", partial: output });
@@ -537,6 +612,20 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 			for await (const event of iterateAnthropicEvents(response, options?.signal, requestId)) {
 				if (event.type === "message_start") {
 					output.responseId = event.message.id;
+					if (dropStale) {
+						const transformations = (event.message as { input_transformations?: { type?: string }[] })
+							.input_transformations;
+						const dropped = (transformations ?? []).filter((entry) => entry.type === "thinking_dropped").length;
+						if (staleThinking) {
+							staleThinking.details = { ...staleThinking.details, droppedBlocks: dropped };
+						} else if (dropped > 0) {
+							appendAssistantMessageDiagnostic(output, {
+								type: "anthropic_stale_thinking_dropped",
+								timestamp: Date.now(),
+								details: { retried: false, droppedBlocks: dropped },
+							});
+						}
+					}
 					// Capture initial token usage from message_start event
 					// This ensures we have input token counts even if the stream is aborted early
 					output.usage.input = event.message.usage.input_tokens || 0;
@@ -869,7 +958,14 @@ function createClient(
 	useFineGrainedToolStreamingBeta: boolean,
 	optionsHeaders?: Record<string, string>,
 	dynamicHeaders?: Record<string, string>,
-): { client: Anthropic; isOAuthToken: boolean } {
+): { client: Anthropic; isOAuthToken: boolean; betaHeader?: string } {
+	// Remember the beta header the client sends, so a request that needs one more beta can extend it.
+	let betaHeader: string | undefined;
+	const merge = (...sources: (Record<string, string | null> | undefined)[]) => {
+		const merged = mergeHeaders(...sources);
+		betaHeader = merged["anthropic-beta"] ?? undefined;
+		return merged;
+	};
 	// Adaptive thinking models (Opus 4.6, Sonnet 4.6) have interleaved thinking built-in.
 	// The beta header is deprecated on Opus 4.6 and redundant on Sonnet 4.6, so skip it.
 	const needsInterleavedBeta = interleavedThinking && !supportsAdaptiveThinking(model.id);
@@ -888,7 +984,7 @@ function createClient(
 			authToken: null,
 			baseURL: resolveCloudflareBaseUrl(model),
 			dangerouslyAllowBrowser: true,
-			defaultHeaders: mergeHeaders(
+			defaultHeaders: merge(
 				{
 					accept: "application/json",
 					"anthropic-dangerous-direct-browser-access": "true",
@@ -902,7 +998,7 @@ function createClient(
 			),
 		});
 
-		return { client, isOAuthToken: false };
+		return { client, isOAuthToken: false, betaHeader };
 	}
 
 	if (model.provider === "github-copilot") {
@@ -912,7 +1008,7 @@ function createClient(
 			authToken: apiKey,
 			baseURL: model.baseUrl,
 			dangerouslyAllowBrowser: true,
-			defaultHeaders: mergeHeaders(
+			defaultHeaders: merge(
 				{
 					accept: "application/json",
 					"anthropic-dangerous-direct-browser-access": "true",
@@ -924,7 +1020,7 @@ function createClient(
 			),
 		});
 
-		return { client, isOAuthToken: false };
+		return { client, isOAuthToken: false, betaHeader };
 	}
 
 	if (isOAuthToken(apiKey)) {
@@ -934,7 +1030,7 @@ function createClient(
 			authToken: apiKey,
 			baseURL: model.baseUrl,
 			dangerouslyAllowBrowser: true,
-			defaultHeaders: mergeHeaders(
+			defaultHeaders: merge(
 				{
 					accept: "application/json",
 					"anthropic-dangerous-direct-browser-access": "true",
@@ -947,7 +1043,7 @@ function createClient(
 			),
 		});
 
-		return { client, isOAuthToken: true };
+		return { client, isOAuthToken: true, betaHeader };
 	}
 
 	const client = new Anthropic({
@@ -955,7 +1051,7 @@ function createClient(
 		apiKey,
 		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,
-		defaultHeaders: mergeHeaders(
+		defaultHeaders: merge(
 			{
 				accept: "application/json",
 				"anthropic-dangerous-direct-browser-access": "true",
@@ -966,7 +1062,7 @@ function createClient(
 		),
 	});
 
-	return { client, isOAuthToken: false };
+	return { client, isOAuthToken: false, betaHeader };
 }
 
 function buildParams(
