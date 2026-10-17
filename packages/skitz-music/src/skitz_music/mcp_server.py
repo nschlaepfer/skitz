@@ -24,4 +24,22 @@ def create_server(workspace: str) -> FastMCP:
     }
     for name, description in descriptions.items():
         server.tool(name=name, description=description)(getattr(service, name))
+
+    from .suno import SunoService
+
+    suno = SunoService(workspace)
+    suno_descriptions = {
+        "suno_credits": "Check the user's Suno session and remaining credits.",
+        "suno_generate": (
+            "Generate a song on the user's Suno account (2 clips; spends credits). Give "
+            "description, or lyrics/tags/title. With output_dir, waits and saves mp3s and a "
+            "manifest there; otherwise returns clip ids. A captcha_required or auth_expired "
+            "error needs the user to act; never try to work around it."
+        ),
+        "suno_status": "Show the status and audio URLs of Suno clips by id.",
+        "suno_wait": "Wait for Suno clips to finish; with output_dir, save mp3s and a manifest.",
+        "suno_lyrics": "Have Suno write song lyrics from a prompt (no credits).",
+    }
+    for name, description in suno_descriptions.items():
+        server.tool(name=name, description=description)(getattr(suno, name))
     return server

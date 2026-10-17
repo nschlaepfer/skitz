@@ -53,3 +53,31 @@ Never describe score analysis as listening. Preserve first attempts and every
 repair during evaluations. Auggie's Bach Benchmark is inspiration and a separate
 direct-LilyPond task; the Skitz structured-score workflow is not a faithful one-shot
 reproduction. Consult `docs/evaluation.md` in the Skitz checkout for conditions.
+
+## Suno songs
+
+Suno makes finished, produced audio from a text description, or from lyrics plus
+style tags. That is different from the editable scores above. Use it when the user
+asks for a full song or a Suno track. Each generation makes 2 clips and spends the
+user's Suno credits, so confirm before generating more than once.
+
+```python
+from pathlib import Path
+from skitz_music.suno import SunoClient, SunoError, build_payload
+
+suno = SunoClient()  # reads SUNO_COOKIE or ~/.skitz/suno/cookie
+suno.billing()       # {"credits": ..., "plan": ...}
+payload = build_payload(description="warm lofi beat about rainy mornings", model="v4.5")
+# Custom mode: build_payload(lyrics="[Verse]\n...", tags="indie folk, male vocals", title="...")
+clips = suno.generate(payload)
+done = suno.wait([c["id"] for c in clips], timeout=300)
+suno.download(done, Path("songs/rainy-mornings"), request=payload)  # mp3s + manifest.json
+```
+
+`suno.lyrics(prompt)` drafts lyrics without spending credits. Model aliases are
+`v3.5`, `v4`, `v4.5`, `v4.5+` and `v5`. Errors are `SunoError` with a `kind`. Stop and
+tell the user on `auth_missing` or `auth_expired` (save a fresh cookie with
+`skitz suno login -`), `captcha_required` (create one song by hand on suno.com) or
+`out_of_credits`. Never try to solve or get around a captcha. On `timeout`, call
+`wait` again with the same ids. Suno audio is a separate artifact, not a revision of
+a Skitz score.

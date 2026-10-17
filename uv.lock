@@ -1653,21 +1653,25 @@ dependencies = [
 mcp = [
     { name = "mcp" },
 ]
+suno = [
+    { name = "httpx" },
+]
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", marker = "extra == 'suno'", specifier = ">=0.27,<1" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.12,<2" },
     { name = "music21", specifier = ">=9.7,<10" },
     { name = "pydantic", specifier = ">=2.10,<3" },
 ]
-provides-extras = ["mcp"]
+provides-extras = ["mcp", "suno"]
 
 [[package]]
 name = "skitz-workspace"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "skitz-music", extra = ["mcp"] },
+    { name = "skitz-music", extra = ["mcp", "suno"] },
 ]
 
 [package.dev-dependencies]
@@ -1677,7 +1681,7 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "skitz-music", extras = ["mcp"], editable = "packages/skitz-music" }]
+requires-dist = [{ name = "skitz-music", extras = ["mcp", "suno"], editable = "packages/skitz-music" }]
 
 [package.metadata.requires-dev]
 dev = [

@@ -23,6 +23,10 @@ def main() -> int:
         except (ValueError, RuntimeError) as exc:
             print(str(exc), file=sys.stderr)
             return 2
+    if argv[0] == "suno":
+        from .suno_cli import main as suno_main
+
+        return suno_main(argv[1:])
     parser = argparse.ArgumentParser(
         prog="skitz", description="Editable music with ChatGPT subscription sign-in and Prime Agent"
     )
@@ -84,6 +88,9 @@ def main() -> int:
     )
     verify.add_argument("project")
     verify.add_argument("--require-audio", action="store_true")
+    commands.add_parser(
+        "suno", help="Generate songs on your Suno account (see skitz suno --help)", add_help=False
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "login":

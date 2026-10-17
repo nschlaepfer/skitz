@@ -20,3 +20,8 @@ Do not overwrite validators or manually mutate project state. Treat chorale
 conventions as style-specific diagnostics and audio generation as rendering,
 not listening. The authored demo and deterministic evaluation are test fixtures,
 not model-generated music or a Bach Benchmark score.
+
+For finished, produced songs, use the `suno_*` MCP tools or `uv run skitz suno`
+(`--help` lists exit codes). They use the user's own Suno session cookie and spend
+Suno credits; each generation makes 2 clips. If you get `captcha_required`,
+`auth_expired` or `out_of_credits`, stop and tell the user. Never work around a captcha.

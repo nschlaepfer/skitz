@@ -59,6 +59,33 @@ pitch, tie and articulation changes within named measures. Arbitrary DAW session
 polyphonic track import, changing tempo/meter maps and lossless LilyPond import
 are not supported in this first version.
 
+## Suno Songs
+
+Skitz can also make finished songs on your own Suno account, for requests that
+want produced audio rather than an editable score. Suno has no public API, so this
+uses your suno.com web session and its private endpoints. These can change without
+notice, and automating them may conflict with Suno's terms. Every generation spends
+your Suno credits.
+
+Log in at suno.com, open DevTools, select any `clerk.suno.com` request and copy its
+`cookie` request header. Then:
+
+```sh
+pbpaste | uv run skitz suno login -
+uv run skitz suno whoami
+uv run skitz suno generate -d "warm lofi beat about rainy mornings" --out songs/rain
+uv run skitz suno generate --title "Night Drive" -t "synthwave, female vocals" \
+  --lyrics-file lyrics.txt -m v5 --out songs/night-drive
+uv run skitz suno lyrics "a sea shanty about debugging"
+```
+
+The cookie is saved to `~/.skitz/suno/cookie` with mode 600 (or set `SUNO_COOKIE`).
+Each download folder gets a `manifest.json` with the request, clip metadata and file
+hashes. The agent uses `skitz_music.suno`, and MCP clients get `suno_credits`,
+`suno_generate`, `suno_status`, `suno_wait` and `suno_lyrics`. When Suno asks for a
+captcha, Skitz stops with exit code 4. Create one song by hand on suno.com, then
+retry. Skitz never tries to solve or get around a captcha.
+
 ## Rendering
 
 On macOS:
