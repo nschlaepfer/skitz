@@ -37,15 +37,17 @@ Let the agent and the user find any sound, image or video in the workspace by
 describing it ("dusty Rhodes loop in A minor", "the vocal chop from the JUJU B
 session") or by example ("kicks that sound like this one"), instead of by filename.
 
-- **Model.** [Gemini Embedding 2](https://blog.google/innovation-and-ai/models-and-research/gemini-models/gemini-embedding-2/)
-  (`gemini-embedding-2-preview`, public preview since March 2026) maps text, images,
+- **Model.** [Gemini Embedding 2](https://ai.google.dev/gemini-api/docs/models/gemini-embedding-2)
+  (stable as `gemini-embedding-2` since April 2026, after a March preview) maps text, images,
   video (up to 120 s, MP4/MOV), audio (embedded natively, without transcribing it) and
   PDFs into one embedding space, so a text query can find audio and audio can find
-  audio. Output can be 3072, 1536 or 768 dimensions (Matryoshka), which trades quality
+  audio. Output can be 128 to 3072 dimensions (768, 1536 or 3072 recommended), which trades quality
   against index size. EmbeddingGemma 2, an open and lightweight multimodal model, is a
   candidate for an offline or no-upload mode and needs evaluating against it.
 - **Index.** Embed every file the manifests already track (Suno songs, stems, loops,
-  hits, renders, cover art), once per SHA-256, when it is created or imported. Split long
+  hits, renders), once per SHA-256, when it is created or imported. Cover art first needs
+  its own step: manifests record Suno's `image_url` but don't save or hash the image, so
+  download it next to the song and add it to the manifest before indexing. Split long
   audio into windows that fit the model's input limit, and keep the vectors in a local
   per-workspace store next to the manifest metadata.
 - **Query.** Rank by similarity, then filter by the facts Skitz already measures: BPM,
