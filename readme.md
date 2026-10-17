@@ -70,8 +70,11 @@ uses your suno.com web session and its private endpoints. These can change witho
 notice, and automating them may conflict with Suno's terms. Every generation spends
 your Suno credits.
 
-Connect your account once. The command opens the right pages and walks you through
-copying one cookie, then checks it with Suno before saving:
+Connect your account once. The command opens a Skitz Chrome window (its own profile
+under `~/.skitz/suno/browser`, separate from your everyday browser). Sign in to
+Suno there, press Enter in the terminal, and Skitz reads that session, checks it
+with Suno and saves it. It never reads your normal Chrome. Without Chrome, it falls
+back to copying the `__client` cookie from DevTools:
 
 ```sh
 uv run skitz auth login suno     # or: uv run skitz login suno
