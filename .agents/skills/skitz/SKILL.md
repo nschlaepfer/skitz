@@ -10,9 +10,11 @@ this repository. `uv run skitz schema` exposes the exact canonical score format.
 Read `packages/skitz-music/SKILL.md` for Python calls, representations and edit
 constraints. These operations run locally without model calls or API keys.
 
-For autonomous music tasks delegated to the Prime harness, use `uv run skitz agent`
-after the user signs in with `uv run skitz login`. It uses the user's ChatGPT
-subscription. Do not request an API key or copy credentials from other apps.
+For autonomous music tasks delegated to the Prime harness, use `uv run skitz agent`.
+It runs on the user's ChatGPT subscription (`skitz login`, default `gpt-6.1-sol`) or
+on Claude with their Anthropic API key (`skitz auth login claude`, default
+`claude-opus-5-5`; `--provider claude`). Never ask for or copy credentials yourself.
+Point the user at those commands.
 
 Inspect HEAD, declare the allowed measures, patch against that revision, validate,
 render and compare. Preserve protected tracks and save evidence for every revision.
@@ -21,7 +23,7 @@ conventions as style-specific diagnostics and audio generation as rendering,
 not listening. The authored demo and deterministic evaluation are test fixtures,
 not model-generated music or a Bach Benchmark score.
 
-Check connections with `uv run skitz auth --json` (Suno and ChatGPT). If Suno is not
+Check connections with `uv run skitz auth --json` (Suno, ChatGPT and Claude). If Suno is not
 connected, ask the user to run `uv run skitz auth login suno`. It is guided, and you
 never handle the cookie. For finished, produced songs, use the `suno_*` MCP tools or `uv run skitz suno`
 (`--help` lists exit codes). They use the user's own Suno session cookie and spend

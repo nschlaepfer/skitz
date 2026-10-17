@@ -2,7 +2,7 @@
 name = "skitz-workspace"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["skitz-music[mcp,suno]"]
+dependencies = ["skitz-music[mcp,suno,claude]"]
 
 [tool.uv.workspace]
 members = ["packages/skitz-music"]

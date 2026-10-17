@@ -1,0 +1,1 @@
+- Claude Opus 5.5 and Claude Sonnet 5.5 are treated as always-on adaptive thinking models, so a "thinking off" request no longer sends `thinking: {type: "disabled"}` or sampling params, which those models reject with a 400.

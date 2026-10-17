@@ -5,7 +5,12 @@ import { setImmediate } from "node:timers/promises";
 import { AuthStorage } from "../../vendor/prime-agent/packages/coding-agent/src/core/auth-storage.js";
 
 const storage = AuthStorage.create();
-if (process.argv.includes("--status")) {
+if (process.argv.includes("--check")) {
+  // Resolves the credential the way the agent will, refreshing an expired sign-in.
+  // Prints only whether it is usable, never the token.
+  const usable = Boolean(await storage.getApiKey("openai-codex").catch(() => undefined));
+  console.log(JSON.stringify({ provider: "openai-codex", usable }));
+} else if (process.argv.includes("--status")) {
   console.log(JSON.stringify({ provider: "openai-codex", signedIn: storage.get("openai-codex")?.type === "oauth" }));
 } else {
   const input = createInterface({ input: stdin, output: stdout });
