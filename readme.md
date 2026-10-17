@@ -186,7 +186,20 @@ it, allows use for private or commercial music. Skitz doesn't bundle the file.
 Renders use `--soundfont`, then `SKITZ_SOUNDFONT`, then the installed font. With
 none, audio is skipped with a hint (`audio_skipped`) rather than failing the render.
 An explicit `--soundfont` that doesn't exist fails. `skitz play <file>` plays any
-audio, and `--background` / `--stop` control playback. For only notation/MIDI, use
+audio, and `--background` / `--stop` control playback.
+
+## Animations
+
+The agent screen is music-themed. While the agent works, the spinner is a four-bar
+equalizer; the SKITZ mark shimmers in a magenta-to-cyan gradient; and whenever audio
+plays (`skitz play … --background`, or the agent playing a render), live spectrum
+bars appear above the editor. `skitz play <project|file> --visualize` shows the same
+bars in any terminal. The bars come from the audio itself: a Hann-window FFT in 32
+log-spaced bands at 20 fps, computed when playback starts (about 0.5 s for a
+3-minute song). The loader and visualizer are a Skitz extension
+(`apps/cli/skitz-visuals.ts`); the header shimmer lives in the runtime's splash
+(`themes/skitz-shimmer.ts`), because the session daemon doesn't forward extension
+headers. Set `SKITZ_ANIMATIONS=off` for the stock screen. For only notation/MIDI, use
 `--no-audio`; for only source/MIDI/MusicXML, also use `--no-engrave`.
 
 Each render records the revision, tool versions, SoundFont hash, synthesis settings

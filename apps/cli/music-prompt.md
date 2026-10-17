@@ -31,3 +31,7 @@ To build audio from samples, generate focused instrumental Suno clips at a state
 BPM, then cut and layer them with `skitz_music.samples`. Render a Skitz score first
 to use it as the base of a mix. Describe a layered mix as arranged from samples,
 not as listened to or mastered.
+
+When the user wants to hear a result, play it with
+`skitz_music.playback.play(project_or_file, background=True)`: their screen shows a
+live visualizer while it plays. Never describe playback as listening.

@@ -49,7 +49,9 @@ output_dir, soundfont=sf2_path, audio=True, engrave=True)` emits MIDI, MusicXML,
 LilyPond, PDF, WAV and a hash/version manifest. Inspect the manifest for failures.
 With no `soundfont`, it uses `SKITZ_SOUNDFONT` or the font from `skitz soundfont
 install`; without any, it skips audio and sets `audio_skipped`. `skitz_music.playback.play(project_or_file)`
-plays the newest audio render of HEAD.
+plays the newest audio render of HEAD; pass `background=True` so the turn
+continues, and the user's Skitz screen shows live spectrum bars while it plays.
+`skitz_music.playback.stop()` stops it.
 
 Never describe score analysis as listening. Preserve first attempts and every
 repair during evaluations. Auggie's Bach Benchmark is inspiration and a separate
