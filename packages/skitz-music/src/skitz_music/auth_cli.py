@@ -15,6 +15,8 @@ import argparse
 import getpass
 import json
 import re
+import shutil
+import subprocess
 import sys
 import webbrowser
 from collections.abc import Callable
@@ -33,7 +35,8 @@ Connect Suno
      It shows a page of text; leave it.
   3. On that tab open DevTools (Option-Cmd-I) > Application > Cookies >
      {suno.CLERK_BASE}, click the row named exactly __client, and copy its value.
-  4. Paste it below. The value, `__client=...` or a whole cookie header all work.
+  4. Come back here and press Enter: Skitz reads the value from your clipboard.
+     (It is too long to paste into a terminal prompt on macOS.)
 """
 
 
@@ -65,6 +68,21 @@ def normalize_suno_cookie(text: str) -> str:
     return f"__client={value}"
 
 
+def read_clipboard() -> str:
+    """The clipboard's text, or "" when no clipboard tool is available."""
+    for command in (
+        ["pbpaste"],
+        ["wl-paste", "--no-newline"],
+        ["xclip", "-o", "-selection", "clipboard"],
+    ):
+        if shutil.which(command[0]):
+            try:
+                return subprocess.run(command, capture_output=True, text=True, timeout=5).stdout
+            except (OSError, subprocess.SubprocessError):
+                return ""
+    return ""
+
+
 def suno_status(transport: httpx.BaseTransport | None = None) -> dict:
     status = {"provider": "suno", "method": "session cookie", "file": str(suno.cookie_file())}
     try:
@@ -89,6 +107,7 @@ def login_suno(
     transport: httpx.BaseTransport | None = None,
     prompt: Callable[[str], str] = getpass.getpass,
     open_url: Callable[[str], object] = webbrowser.open,
+    clipboard: Callable[[], str] = read_clipboard,
     attempts: int = 3,
 ) -> dict:
     """Save a working Suno login. With `value`, no prompts; otherwise guide the user."""
@@ -101,7 +120,13 @@ def login_suno(
         prompt("Press Enter once you are signed in to Suno... ")
         open_url(SUNO_COOKIE_PAGE)
     for attempt in range(1, attempts + 1):
-        raw = prompt("Paste the __client value (hidden): ") if interactive else value
+        if interactive:
+            # Terminals cap a typed line at 1024 bytes, shorter than the cookie, so a
+            # pasted value is silently cut off; pressing Enter reads the clipboard instead.
+            typed = prompt("Copy the __client value, then press Enter here: ")
+            raw = typed if typed.strip() else clipboard()
+        else:
+            raw = value
         try:
             cookie = normalize_suno_cookie(raw or "")
             info = suno.SunoClient(cookie, transport).billing()
