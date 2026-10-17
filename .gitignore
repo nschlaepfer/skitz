@@ -13,3 +13,10 @@ __pycache__/
 work/
 dist/
 build/
+
+# macOS
+.DS_Store
+
+# Local env files
+.env.*
+!.env.example

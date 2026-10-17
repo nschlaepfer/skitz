@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    # macOS matches the restricted render worker (sandbox-exec) Skitz is tested on.
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vendor/prime-agent/package-lock.json
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install ffmpeg
+        run: brew install ffmpeg
+
+      - name: Install the pinned Prime runtime and Python packages
+        run: |
+          npm ci --prefix vendor/prime-agent --no-audit --no-fund
+          uv sync --locked
+
+      - name: Lint, test and type-check
+        run: npm run check

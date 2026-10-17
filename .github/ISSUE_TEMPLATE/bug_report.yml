@@ -1,0 +1,28 @@
+name: Bug report
+description: Something in Skitz does not work as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Command output
+      description: Paste the JSON or error output. Remove cookies, tokens and keys first.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Commit or version
+      placeholder: git rev-parse --short HEAD
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Output of `uv run skitz doctor`, plus macOS version.
+      render: json

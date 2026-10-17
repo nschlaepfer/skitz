@@ -1,0 +1,13 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  # vendor/prime-agent is pinned on purpose and updated through a reviewed
+  # source import (see docs/upstream.md), so npm is not watched here.
