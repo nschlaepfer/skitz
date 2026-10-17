@@ -2,6 +2,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ENV_AGENT_DIR } from "../../src/config.js";
 import { createHarness, type Harness } from "./harness.js";
 
 type SerializedInternals = {
@@ -112,6 +113,7 @@ describe("Serialized auto-refine checkpoint", () => {
 
 	afterEach(() => {
 		vi.restoreAllMocks();
+		vi.unstubAllEnvs();
 		while (harnesses.length > 0) {
 			harnesses.pop()?.cleanup();
 		}
@@ -206,9 +208,50 @@ describe("Serialized auto-refine checkpoint", () => {
 
 		await internals._runSerializedRefineCheckpoint();
 
-		// _applyRefine was called (which rebuilds system prompt).
+		// _applyRefine was called (which appends the harness state update).
 		expect(applyRefine).toHaveBeenCalledTimes(1);
 		expect(internals._assistantTurnsSinceAutoRefine).toBe(0);
+	});
+
+	it("puts the harness update into the live run's context without touching the system prompt", async () => {
+		const harness = await createHarness({
+			persistSession: true,
+			serializedRefine: true,
+			settings: { autoRefine: { enabled: true, turnInterval: 1, cooldownMs: 0 } },
+			autoRefineReviewer: vi.fn(async () => ({
+				shouldRefine: true,
+				rationale: "add memory",
+				instructions: "add a memory entry",
+			})),
+		});
+		harnesses.push(harness);
+		vi.stubEnv(ENV_AGENT_DIR, `${harness.tempDir}/agent`);
+		const internals = harness.session as unknown as SerializedInternals;
+		vi.spyOn(internals, "_planRefine").mockResolvedValue({
+			id: "refine_live",
+			proposal: {
+				summary: "Remember the tempo",
+				rationale: "The user set it.",
+				expectedOutcome: "Later turns keep 92 BPM.",
+				edits: [{ action: "create", kind: "memory", title: "Tempo", content: "Keep the track at 92 BPM." }],
+			},
+		});
+		internals._assistantTurnsSinceAutoRefine = 1;
+		const systemPrompt = harness.session.systemPrompt;
+		// The agent loop works on its own copy of the context between turns.
+		const liveContext = { systemPrompt, messages: [] as unknown[], tools: [] };
+
+		await internals._shouldStopAfterTurn({ ...makeCtx("turn done"), context: liveContext });
+
+		expect(liveContext.messages).toEqual([
+			expect.objectContaining({
+				customType: "harness_state_update",
+				content: expect.stringContaining("Keep the track at 92 BPM."),
+			}),
+		]);
+		// Same message, same position in the session's own transcript.
+		expect(harness.session.messages.at(-1)).toBe(liveContext.messages[0]);
+		expect(harness.session.systemPrompt).toBe(systemPrompt);
 	});
 
 	it("final agent_end pending refine completes before dispose", async () => {
@@ -1823,11 +1866,11 @@ describe("P0 concurrency regressions", () => {
 		expect(applySpy).not.toHaveBeenCalled();
 	});
 
-	it("non-mocked apply pipeline: harness state persisted, prompt rebuilt, refine_complete emitted", async () => {
+	it("non-mocked apply pipeline: harness state persisted, prompt kept, update appended, refine_complete emitted", async () => {
 		// This test does NOT mock _applyRefine. It uses a faux planRefine
 		// mock but lets the real _applyRefine run, which calls
-		// applyRefinementProposal, saveHarnessState, _rebuildSystemPrompt,
-		// and emits refine_complete.
+		// applyRefinementProposal, saveHarnessState, appends a
+		// harness_state_update, and emits refine_complete.
 		const reviewer = vi.fn(async () => ({
 			shouldRefine: true,
 			rationale: "test",
@@ -1868,7 +1911,8 @@ describe("P0 concurrency regressions", () => {
 		};
 		vi.spyOn(internals, "_planRefine").mockResolvedValue(fauxPlan as never);
 
-		// Spy on _rebuildSystemPrompt (call-through) to assert it was invoked.
+		// Spy on _rebuildSystemPrompt (call-through) to assert it is not invoked.
+		const systemPrompt = harness.session.systemPrompt;
 		const rebuildSpy = vi.spyOn(
 			harness.session as unknown as { _rebuildSystemPrompt: (tools: string[]) => string },
 			"_rebuildSystemPrompt",
@@ -1886,8 +1930,13 @@ describe("P0 concurrency regressions", () => {
 		// Run the serialized refine (real _applyRefine runs).
 		await internals._runSerializedRefine({ instructions: "add a memory" });
 
-		// _rebuildSystemPrompt was called by _applyRefine.
-		expect(rebuildSpy).toHaveBeenCalledTimes(1);
+		// The system prompt stays as sent; the new state rides at the tail instead.
+		expect(rebuildSpy).not.toHaveBeenCalled();
+		expect(harness.session.systemPrompt).toBe(systemPrompt);
+		expect(harness.session.messages.at(-1)).toMatchObject({
+			customType: "harness_state_update",
+			content: expect.stringContaining("Added during non-mocked apply pipeline test"),
+		});
 
 		// Harness state persisted to disk.
 		const localDir = (await import("../../src/core/refinement/index.js")).getLocalHarnessStateDir(

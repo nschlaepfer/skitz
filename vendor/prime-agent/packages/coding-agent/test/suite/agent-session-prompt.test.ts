@@ -1,12 +1,16 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxToolCall, type Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ENV_AGENT_DIR } from "../../src/config.js";
+import { AgentSession } from "../../src/core/agent-session.js";
 import type { BashResult } from "../../src/core/bash-executor.js";
+import { convertToLlm } from "../../src/core/messages.js";
 import type { PromptTemplate } from "../../src/core/prompt-templates.js";
+import { SessionManager } from "../../src/core/session-manager.js";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.js";
 import { createTestResourceLoader } from "../utilities.js";
 import { createHarness, getAssistantTexts, getMessageText, getUserTexts, type Harness } from "./harness.js";
@@ -31,11 +35,56 @@ function gateNextAgentStart(harness: Harness): { reached: Promise<void>; release
 	return { reached, release };
 }
 
+function llmMessageText(message: { content: unknown }): string {
+	if (typeof message.content === "string") return message.content;
+	return (message.content as Array<{ type: string; text?: string }>)
+		.filter((part) => part.type === "text")
+		.map((part) => part.text ?? "")
+		.join("");
+}
+
+/** Plan a refinement whose real apply phase adds one local memory. */
+function stubRefinePlan(harness: Harness): void {
+	const internals = harness.session as unknown as {
+		_planRefine(options: unknown, signal: AbortSignal): Promise<unknown>;
+	};
+	vi.spyOn(internals, "_planRefine").mockResolvedValue({
+		id: "refine_groove",
+		proposal: {
+			summary: "Remember the groove preference",
+			rationale: "The user asked for it twice.",
+			expectedOutcome: "Later turns default to 7/8.",
+			edits: [
+				{ action: "create", kind: "memory", title: "Groove preference", content: "The user wants grooves in 7/8." },
+			],
+		},
+	});
+}
+
+function atSystemTime<T>(time: number, run: () => T): T {
+	vi.useFakeTimers({ toFake: ["Date"] });
+	vi.setSystemTime(time);
+	try {
+		return run();
+	} finally {
+		vi.useRealTimers();
+	}
+}
+
 describe("AgentSession prompt characterization", () => {
 	const harnesses: Harness[] = [];
 	const tempDirs: string[] = [];
 
+	/** Keep refinements away from the developer's global harness state. */
+	function isolateAgentDir(): void {
+		const agentDir = join(tmpdir(), `pi-agent-dir-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(agentDir, { recursive: true });
+		tempDirs.push(agentDir);
+		vi.stubEnv(ENV_AGENT_DIR, agentDir);
+	}
+
 	afterEach(() => {
+		vi.unstubAllEnvs();
 		while (harnesses.length > 0) {
 			harnesses.pop()?.cleanup();
 		}
@@ -532,7 +581,8 @@ stale extension instructions`,
 		expect(providerSystemPrompts[1]).not.toContain("stale extension instructions");
 	});
 
-	it("discards a stale extension prompt when refine completes during a normal prompt hook", async () => {
+	it("keeps an extension prompt built on the conversation base when refine completes during a normal prompt hook", async () => {
+		isolateAgentDir();
 		let signalHookStarted: () => void = () => {};
 		const hookStarted = new Promise<void>((resolve) => {
 			signalHookStarted = resolve;
@@ -543,7 +593,6 @@ stale extension instructions`,
 		});
 		const harness = await createHarness({
 			persistSession: true,
-			systemPrompt: "pre-refine base",
 			extensionFactories: [
 				(pi) => {
 					pi.on("before_agent_start", async (event) => {
@@ -557,39 +606,22 @@ stale extension instructions`,
 							},
 							systemPrompt: `${event.systemPrompt}
 
-stale extension instructions`,
+extension instructions`,
 						};
 					});
 				},
 			],
 		});
 		harnesses.push(harness);
-		const internals = harness.session as unknown as {
-			_baseSystemPrompt: string;
-			_refineInFlight?: Promise<void>;
-			_refineAbortController?: AbortController;
-			_planRefine(options: unknown, signal: AbortSignal): Promise<unknown>;
-			_applyRefine(plan: unknown, options: unknown, abort: AbortController): Promise<unknown>;
-		};
-		vi.spyOn(internals, "_planRefine").mockResolvedValue({ id: "race-plan", proposal: { edits: [] } });
-		vi.spyOn(internals, "_applyRefine").mockImplementation(async () => {
-			internals._baseSystemPrompt = "refined $& base";
-			harness.session.agent.state.systemPrompt = "refined $& base";
-			internals._refineAbortController = undefined;
-			return {
-				id: "refine_race",
-				summary: "refined",
-				rationale: "test",
-				expectedOutcome: "test",
-				appliedEdits: [],
-			};
-		});
+		stubRefinePlan(harness);
+		const internals = harness.session as unknown as { _refineInFlight?: Promise<void> };
+		const basePrompt = harness.session.systemPrompt;
 		let providerSystemPrompt = "";
-		let providerMessages = "";
+		let providerMessages: string[] = [];
 		harness.setResponses([
 			(context) => {
 				providerSystemPrompt = context.systemPrompt ?? "";
-				providerMessages = JSON.stringify(context.messages);
+				providerMessages = context.messages.map(llmMessageText);
 				return fauxAssistantMessage("done");
 			},
 		]);
@@ -601,12 +633,14 @@ stale extension instructions`,
 		releaseHook();
 		await promptPromise;
 
-		expect(providerSystemPrompt).toContain("refined $& base");
-		expect(providerSystemPrompt).toContain("stale extension instructions");
+		// Refinement leaves the base alone, so the prompt the hook built is still current.
+		expect(providerSystemPrompt).toBe(`${basePrompt}\n\nextension instructions`);
 		expect(providerMessages).toContain("extension message preserved");
+		expect(providerMessages).toContainEqual(expect.stringContaining("<harness_state_update>"));
 	});
 
 	it("preserves an independent extension prompt when refine completes during its hook", async () => {
+		isolateAgentDir();
 		let releaseHook: () => void = () => {};
 		const hookRelease = new Promise<void>((resolve) => {
 			releaseHook = resolve;
@@ -617,7 +651,6 @@ stale extension instructions`,
 		});
 		const harness = await createHarness({
 			persistSession: true,
-			systemPrompt: "pre-refine base",
 			extensionFactories: [
 				(pi) => {
 					pi.on("before_agent_start", async () => {
@@ -629,26 +662,7 @@ stale extension instructions`,
 			],
 		});
 		harnesses.push(harness);
-		const internals = harness.session as unknown as {
-			_baseSystemPrompt: string;
-			_refineAbortController?: AbortController;
-			_planRefine(options: unknown, signal: AbortSignal): Promise<unknown>;
-			_applyRefine(plan: unknown, options: unknown, abort: AbortController): Promise<unknown>;
-		};
-		vi.spyOn(internals, "_planRefine").mockResolvedValue({ id: "race-plan", proposal: { edits: [] } });
-		vi.spyOn(internals, "_applyRefine").mockImplementation(async () => {
-			internals._baseSystemPrompt = "refined base";
-			harness.session.agent.state.systemPrompt = "refined base";
-			internals._refineAbortController = undefined;
-			return {
-				id: "refine_independent",
-				summary: "refined",
-				rationale: "test",
-				expectedOutcome: "test",
-				appliedEdits: [],
-				harnessStatePath: "",
-			};
-		});
+		stubRefinePlan(harness);
 		let providerSystemPrompt = "";
 		harness.setResponses([
 			(context) => {
@@ -659,14 +673,15 @@ stale extension instructions`,
 
 		const promptPromise = harness.session.prompt("normal prompt");
 		await hookStarted;
-		await harness.session.refine({ instructions: "refresh the base" });
+		await harness.session.refine({ instructions: "record a memory" });
 		releaseHook();
 		await promptPromise;
 
 		expect(providerSystemPrompt).toBe("independent extension replacement");
 	});
 
-	it("refreshes an extension system prompt when refine completes during an injected prompt hook", async () => {
+	it("keeps an extension prompt built on the conversation base when refine completes during an injected prompt hook", async () => {
+		isolateAgentDir();
 		let signalHookStarted: () => void = () => {};
 		const hookStarted = new Promise<void>((resolve) => {
 			signalHookStarted = resolve;
@@ -677,7 +692,6 @@ stale extension instructions`,
 		});
 		const harness = await createHarness({
 			persistSession: true,
-			systemPrompt: "pre-refine base",
 			extensionFactories: [
 				(pi) => {
 					pi.on("before_agent_start", async (event) => {
@@ -691,19 +705,16 @@ stale extension instructions`,
 							},
 							systemPrompt: `${event.systemPrompt}
 
-stale injected extension instructions`,
+injected extension instructions`,
 						};
 					});
 				},
 			],
 		});
 		harnesses.push(harness);
+		stubRefinePlan(harness);
 		const internals = harness.session as unknown as {
-			_baseSystemPrompt: string;
 			_refineInFlight?: Promise<void>;
-			_refineAbortController?: AbortController;
-			_planRefine(options: unknown, signal: AbortSignal): Promise<unknown>;
-			_applyRefine(plan: unknown, options: unknown, abort: AbortController): Promise<unknown>;
 			_promptInjectedMessage(
 				text: string,
 				message: {
@@ -716,25 +727,13 @@ stale injected extension instructions`,
 				},
 			): Promise<void>;
 		};
-		vi.spyOn(internals, "_planRefine").mockResolvedValue({ id: "race-plan", proposal: { edits: [] } });
-		vi.spyOn(internals, "_applyRefine").mockImplementation(async () => {
-			internals._baseSystemPrompt = "refined injected base";
-			harness.session.agent.state.systemPrompt = "refined injected base";
-			internals._refineAbortController = undefined;
-			return {
-				id: "refine_race",
-				summary: "refined",
-				rationale: "test",
-				expectedOutcome: "test",
-				appliedEdits: [],
-			};
-		});
+		const basePrompt = harness.session.systemPrompt;
 		let providerSystemPrompt = "";
-		let providerMessages = "";
+		let providerMessages: string[] = [];
 		harness.setResponses([
 			(context) => {
 				providerSystemPrompt = context.systemPrompt ?? "";
-				providerMessages = JSON.stringify(context.messages);
+				providerMessages = context.messages.map(llmMessageText);
 				return fauxAssistantMessage("done");
 			},
 		]);
@@ -753,9 +752,97 @@ stale injected extension instructions`,
 		releaseHook();
 		await injectedPrompt;
 
-		expect(providerSystemPrompt).toContain("refined injected base");
-		expect(providerSystemPrompt).toContain("stale injected extension instructions");
+		expect(providerSystemPrompt).toBe(`${basePrompt}\n\ninjected extension instructions`);
 		expect(providerMessages).toContain("injected extension message preserved");
+		expect(providerMessages).toContainEqual(expect.stringContaining("<harness_state_update>"));
+	});
+
+	it("keeps the system prompt byte-identical when a refinement lands mid-conversation", async () => {
+		isolateAgentDir();
+		// A custom base prompt carries the `Current date` line, so the date is covered too.
+		const resourceLoader = { ...createTestResourceLoader(), getSystemPrompt: () => "You are a music agent." };
+		const harness = await createHarness({ persistSession: true, resourceLoader });
+		harnesses.push(harness);
+		stubRefinePlan(harness);
+		const requests: Array<{ systemPrompt: string; messages: string[] }> = [];
+		harness.setResponses([
+			(context) => {
+				requests.push({ systemPrompt: context.systemPrompt ?? "", messages: context.messages.map(llmMessageText) });
+				return fauxAssistantMessage("first reply");
+			},
+			(context) => {
+				requests.push({ systemPrompt: context.systemPrompt ?? "", messages: context.messages.map(llmMessageText) });
+				return fauxAssistantMessage("second reply");
+			},
+		]);
+
+		await harness.session.prompt("first");
+		const before = harness.session.agent.state.systemPrompt;
+		expect(before).toContain("Current date: ");
+		expect(before).toContain("# Continual Harness State");
+		expect(before).not.toContain("Groove preference");
+
+		const result = await harness.session.refine({ instructions: "remember the groove" });
+		expect(result.appliedEdits.map((edit) => edit.applied)).toEqual([true]);
+		expect(harness.session.agent.state.systemPrompt).toBe(before);
+
+		await harness.session.prompt("second");
+
+		expect(requests.map((request) => request.systemPrompt)).toEqual([before, before]);
+		// The update follows the turn it came after and precedes the next prompt.
+		expect(requests[1]?.messages).toEqual([
+			"first",
+			"first reply",
+			expect.stringContaining("<harness_state_update>"),
+			"second",
+		]);
+		expect(requests[1]?.messages[2]).toContain("Groove preference");
+
+		// Resumed days later with the refined memory on disk, the session still renders the
+		// prompt this conversation was sent with: date and harness section come from the transcript.
+		const resumed = atSystemTime(Date.now() + 3 * 24 * 60 * 60 * 1000, () => {
+			return new AgentSession({
+				agent: new Agent({
+					initialState: { model: harness.getModel(), systemPrompt: "", tools: [] },
+					convertToLlm,
+				}),
+				sessionManager: SessionManager.open(harness.sessionManager.getSessionFile()!),
+				settingsManager: harness.settingsManager,
+				cwd: harness.tempDir,
+				modelRegistry: harness.session.modelRegistry,
+				resourceLoader,
+			});
+		});
+		try {
+			expect(resumed.systemPrompt).toBe(before);
+		} finally {
+			resumed.dispose();
+		}
+	});
+
+	it("renders the system prompt afresh after compaction", async () => {
+		isolateAgentDir();
+		const harness = await createHarness({
+			persistSession: true,
+			settings: { compaction: { keepRecentTokens: 1 } },
+		});
+		harnesses.push(harness);
+		stubRefinePlan(harness);
+		harness.setResponses([
+			fauxAssistantMessage("one response"),
+			fauxAssistantMessage("two response"),
+			fauxAssistantMessage("model-generated summary"),
+			fauxAssistantMessage("model-generated turn summary"),
+		]);
+		await harness.session.prompt("one");
+		await harness.session.refine({ instructions: "remember the groove" });
+		await harness.session.prompt("two");
+		expect(harness.session.systemPrompt).not.toContain("Groove preference");
+
+		await harness.session.compact();
+
+		// Compaction starts a new conversation, so the refined state moves into the prompt.
+		expect(harness.session.systemPrompt).toContain("Groove preference");
 	});
 
 	it("pumps a follow-up queued while an injected prompt owns the active turn", async () => {
@@ -891,23 +978,19 @@ extension instructions`,
 		expect(providerSystemPrompt).toContain("extension instructions");
 	});
 
-	it("discards stale extension prompt when refine completes during post-hook _waitForRefineIdle", async () => {
-		// Test C: the extension hook returns an extension prompt while
-		// _refineInFlight is still active. During _waitForRefineIdle after
-		// the hook, the refine completes and rewrites _baseSystemPrompt.
-		// The post-wait guard must detect the base change and discard the
-		// stale extension prompt, using the refined base instead.
+	it("swaps a base re-rendered during the post-hook refine wait into the extension prompt", async () => {
+		// The extension hook returns a prompt built on the base while _refineInFlight
+		// is still active. Refinement no longer touches the base, but the re-renders
+		// still allowed mid-conversation (tool or resource changes, max depth) can land
+		// during the wait. The post-wait guard must swap the new base into the
+		// extension prompt, literally ("$&" is not a replacement pattern).
 		let sessionInternals: {
 			_baseSystemPrompt: string;
 			_refineInFlight?: Promise<void>;
-			_refineAbortController?: AbortController;
-			_planRefine(options: unknown, signal: AbortSignal): Promise<unknown>;
-			_applyRefine(plan: unknown, options: unknown, abort: AbortController): Promise<unknown>;
 		};
 		let releaseRefine: (() => void) | undefined;
 		const harness = await createHarness({
 			persistSession: true,
-			systemPrompt: "pre-refine base",
 			extensionFactories: [
 				(pi) => {
 					pi.on("before_agent_start", async (event) => {
@@ -918,7 +1001,7 @@ extension instructions`,
 						return {
 							systemPrompt: `${event.systemPrompt}
 
-stale post-hook extension instructions`,
+post-hook extension instructions`,
 						};
 					});
 				},
@@ -926,19 +1009,6 @@ stale post-hook extension instructions`,
 		});
 		harnesses.push(harness);
 		sessionInternals = harness.session as unknown as typeof sessionInternals;
-		vi.spyOn(sessionInternals, "_planRefine").mockResolvedValue({ id: "race-plan", proposal: { edits: [] } });
-		vi.spyOn(sessionInternals, "_applyRefine").mockImplementation(async () => {
-			sessionInternals._baseSystemPrompt = "refined post-hook base";
-			harness.session.agent.state.systemPrompt = "refined post-hook base";
-			sessionInternals._refineAbortController = undefined;
-			return {
-				id: "refine_post_hook",
-				summary: "refined",
-				rationale: "test",
-				expectedOutcome: "test",
-				appliedEdits: [],
-			};
-		});
 		let providerSystemPrompt = "";
 		harness.setResponses([
 			(context) => {
@@ -948,20 +1018,18 @@ stale post-hook extension instructions`,
 		]);
 
 		const promptPromise = harness.session.prompt("normal prompt");
-		// The extension hook fires, sets _refineInFlight, and returns a stale
-		// extension prompt. The prompt path enters _waitForRefineIdle.
-		// Wait for the hook to fire and set _refineInFlight.
+		// The extension hook fires, sets _refineInFlight, and returns its prompt.
+		// The prompt path enters _waitForRefineIdle.
 		await vi.waitFor(() => {
 			expect(sessionInternals._refineInFlight).toBeDefined();
 		});
-		// Complete the refine during the wait: change the base and resolve.
-		sessionInternals._baseSystemPrompt = "refined post-hook base";
+		// Re-render the base during the wait, then release it.
+		sessionInternals._baseSystemPrompt = "re-rendered $& base";
 		releaseRefine?.();
 		sessionInternals._refineInFlight = undefined;
 		await promptPromise;
 
-		expect(providerSystemPrompt).toContain("refined post-hook base");
-		expect(providerSystemPrompt).toContain("stale post-hook extension instructions");
+		expect(providerSystemPrompt).toBe("re-rendered $& base\n\npost-hook extension instructions");
 	});
 
 	it("keeps pending nextTurn context separate from accepted agent messages queued while busy", async () => {

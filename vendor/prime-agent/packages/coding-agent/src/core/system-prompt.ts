@@ -33,8 +33,40 @@ export interface BuildSystemPromptOptions {
 	rlmParentAgent?: string;
 	/** Global harness state to inject as compact persistent context. */
 	harnessState?: HarnessState;
+	/**
+	 * Pre-rendered continual harness section. Takes precedence over `harnessState`, so a
+	 * conversation keeps the section its system prompt was first sent with.
+	 */
+	harnessStateSection?: string;
+	/** Date shown in the prompt (YYYY-MM-DD). Sessions pass the conversation's date; defaults to today. */
+	currentDate?: string;
 	/** Enabled user-configured servers available through the generic kernel MCP API. */
 	genericMcpServers?: string[];
+}
+
+/** Local calendar date in the YYYY-MM-DD form the system prompt uses. */
+export function formatPromptDate(date: Date): string {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
+}
+
+/** Render the continual harness section exactly as `buildSystemPrompt` would for these tools and skills. */
+export function formatHarnessStateSection(
+	harnessState: HarnessState,
+	options: Pick<BuildSystemPromptOptions, "selectedTools" | "skills"> = {},
+): string {
+	const tools = options.selectedTools ?? ["ipython"];
+	const hasIpython = tools.includes("ipython");
+	const hasRefineSkill = (options.skills ?? []).some(
+		(skill) => !skill.disableModelInvocation && skill.name === REFINE_SKILL_NAME,
+	);
+	return formatHarnessStateForPrompt(harnessState, {
+		includeIpythonExamples: hasIpython,
+		includeShellExamples: tools.includes("bash"),
+		includeRefineExamples: hasIpython && hasRefineSkill,
+	});
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -54,11 +86,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const promptCwd = cwd.replace(/\\/g, "/");
 	const promptMessagesPath = (messagesPath ?? "not persisted").replace(/\\/g, "/");
 
-	const now = new Date();
-	const year = now.getFullYear();
-	const month = String(now.getMonth() + 1).padStart(2, "0");
-	const day = String(now.getDate()).padStart(2, "0");
-	const date = `${year}-${month}-${day}`;
+	const date = options.currentDate ?? formatPromptDate(new Date());
 
 	const appendSection = appendSystemPrompt ? `\n\n${appendSystemPrompt}` : "";
 
@@ -66,11 +94,13 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const skills = providedSkills ?? [];
 	const tools = selectedTools ?? ["ipython"];
 	const hasIpython = tools.includes("ipython");
-	const hasBash = tools.includes("bash");
 	const visibleSkills = skills.filter((skill) => !skill.disableModelInvocation);
 	const visiblePythonSkillImportNames = getPythonSkillRuntimeInfo(visibleSkills).map((skill) => skill.importName);
 	const hasRefineSkill = visibleSkills.some((skill) => skill.name === REFINE_SKILL_NAME);
 	const genericMcpSection = hasIpython ? formatGenericMcpGuidance(options.genericMcpServers) : "";
+	const harnessSection =
+		options.harnessStateSection ??
+		(harnessState ? formatHarnessStateSection(harnessState, { selectedTools, skills: providedSkills }) : undefined);
 
 	if (customPrompt) {
 		let prompt = customPrompt;
@@ -105,8 +135,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 			prompt += `\n\n${childDoctrine}`;
 		}
 
-		if (harnessState) {
-			prompt += `\n\n${formatHarnessStateForPrompt(harnessState, { includeIpythonExamples: hasIpython, includeShellExamples: hasBash, includeRefineExamples: hasIpython && hasRefineSkill })}`;
+		if (harnessSection) {
+			prompt += `\n\n${harnessSection}`;
 		}
 
 		if (genericMcpSection) {
@@ -144,8 +174,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		})}`;
 	}
 
-	if (harnessState) {
-		prompt += `\n\n${formatHarnessStateForPrompt(harnessState, { includeIpythonExamples: hasIpython, includeShellExamples: hasBash, includeRefineExamples: hasIpython && hasRefineSkill })}`;
+	if (harnessSection) {
+		prompt += `\n\n${harnessSection}`;
 	}
 
 	if (genericMcpSection) {
