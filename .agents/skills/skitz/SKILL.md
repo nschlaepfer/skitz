@@ -29,8 +29,13 @@ Check connections with `uv run skitz auth --json` (Suno, ChatGPT and Claude). If
 connected, ask the user to run `uv run skitz auth login suno`. It is guided, and you
 never handle the cookie. For finished, produced songs, use the `suno_*` MCP tools or `uv run skitz suno`
 (`--help` lists exit codes). They use the user's own Suno session cookie and spend
-Suno credits; each generation makes 2 clips. If you get `captcha_required`,
-`auth_expired` or `out_of_credits`, stop and tell the user. Never work around a captcha. Suno currently blocks audio downloads for API clients
+Suno credits; each generation makes 2 clips. Inside a daily budget the user set
+(`skitz suno budget`), generate without asking each time. On `budget_exceeded` (exit 8),
+stop and ask, and never change the budget yourself. `suno_library` / `skitz suno
+library --search` finds existing songs, and `suno_jobs` / `skitz suno jobs --resume`
+finishes generations after a restart. On `captcha_required`, ask the user to solve it
+and retry with `wait_for_captcha` / `--wait-for-captcha`. If you get `auth_expired` or
+`out_of_credits`, stop and tell the user. Never solve or work around a captcha. Suno currently blocks audio downloads for API clients
 (exit 7, `download_restricted`). Ask the user to download from suno.com instead, and
 never try to decrypt or work around it. `suno_stems` lists stems, and `suno_downbeats`
 gives the BPM and bar offset for cutting loops.
