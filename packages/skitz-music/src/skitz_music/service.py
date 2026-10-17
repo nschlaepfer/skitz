@@ -5,6 +5,7 @@ import zipfile
 from pathlib import Path
 
 from .analysis import analyze_voice_leading, compare_revisions, inspect_score, validate_score
+from .patch import PatchEdit
 from .render import render_score
 from .score import Score
 from .store import Project
@@ -28,7 +29,7 @@ class MusicService:
                     raise ValueError("Project state cannot contain symbolic links")
         return project
 
-    def create_project(self, project: str, score: dict, protected_tracks: list[str]) -> dict:
+    def create_project(self, project: str, score: Score, protected_tracks: list[str]) -> dict:
         return self.project(project).create(Score.model_validate(score), protected_tracks)
 
     def inspect_score(self, project: str, revision: str | None = None) -> dict:
@@ -44,7 +45,7 @@ class MusicService:
         self,
         project: str,
         expected_revision: str,
-        edits: list[dict],
+        edits: list[PatchEdit],
         allowed_measures: list[int],
         reason: str,
     ) -> dict:

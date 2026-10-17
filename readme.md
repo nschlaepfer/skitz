@@ -59,12 +59,13 @@ advanced diagnostic text remain for a later music-interface pass.
 ## Music Tools
 
 ```sh
-uv run skitz schema
+uv run skitz schema            # score format; `skitz schema patch` for edits
 uv run skitz create my-piece score.json --protect soprano
 uv run skitz inspect my-piece
 uv run skitz validate my-piece
 uv run skitz analyze my-piece
 uv run skitz patch my-piece patch.json
+uv run skitz migrate my-piece  # schema-1 projects also migrate on first read
 uv run skitz render my-piece --soundfont /path/to/GeneralUser-GS.sf2
 uv run skitz verify my-piece --require-audio
 uv run skitz export my-piece accepted-piece.zip
@@ -75,12 +76,15 @@ uv run skitz export my-piece accepted-piece.zip
 uncompressed MusicXML. Unsupported constructs fail explicitly. Original Skitz
 scripts and documentation live in `legacy/`; original examples remain in `Examples/`.
 
-Scores use exact quarter-note fractions, spelled pitches, stable event IDs,
-monophonic tracks, fixed meter/tempo, explicit rests, ties and basic articulations.
-The canonical JSON revision is the source of truth. Edits currently support
-pitch, tie and articulation changes within named measures. Arbitrary DAW sessions,
-polyphonic track import, changing tempo/meter maps and lossless LilyPond import
-are not supported in this first version.
+Scores (schema 2) use exact quarter-note fractions, spelled pitches, stable event
+IDs, explicit rests, ties and basic articulations. An event can be a chord, each
+track is one rhythmic line, and meter and tempo maps change at measure starts. The
+canonical JSON revision is the source of truth. Patches change pitches, chords, ties
+and articulations, split, merge, insert, delete and resize events, rewrite a
+track's whole measures, transpose, and set tempo or meter, all against an expected
+revision and within named measures, with protected tracks immutable. Arbitrary DAW
+sessions, independent voices inside one track, mid-measure tempo or meter changes,
+key changes and lossless LilyPond import are not supported.
 
 ## Suno Songs
 

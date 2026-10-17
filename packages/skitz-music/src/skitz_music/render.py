@@ -16,6 +16,7 @@ from pathlib import Path
 import music21
 from music21 import (
     articulations,
+    chord,
     clef,
     instrument,
     key,
@@ -38,22 +39,36 @@ def sha256(path: Path) -> str:
         return hashlib.file_digest(source, "sha256").hexdigest()
 
 
+def low_register(track) -> bool:
+    """Bass clef for SATB tenor/bass, or when the track's median pitch is below middle C."""
+    keys = sorted(pitch.Pitch(p).midi for e in track.events for p in e.pitches)
+    return track.id in {"tenor", "bass"} or (bool(keys) and keys[len(keys) // 2] < 60)
+
+
 def to_music21(score: Score) -> stream.Score:
     result = stream.Score()
     result.metadata = metadata.Metadata(title=score.title)
     tonic, mode = score.key.split()
+    grid = score.grid
     for track in score.tracks:
         part = stream.Part(id=track.id)
         part.partName = track.name
         voice_instrument = instrument.Instrument()
         voice_instrument.midiProgram = track.program
         part.insert(0, voice_instrument)
-        part.insert(0, meter.TimeSignature(score.meter))
-        part.insert(0, tempo.MetronomeMark(number=score.tempo))
+        for change in score.meter_map:
+            part.insert(grid.bounds(change.measure)[0], meter.TimeSignature(change.meter))
+        for change in score.tempo_map:
+            part.insert(grid.bounds(change.measure)[0], tempo.MetronomeMark(number=change.bpm))
         part.insert(0, key.Key(tonic, mode))
-        part.insert(0, clef.BassClef() if track.id in {"tenor", "bass"} else clef.TrebleClef())
+        part.insert(0, clef.BassClef() if low_register(track) else clef.TrebleClef())
         for event in track.events:
-            item = note.Note(event.pitch) if event.pitch else note.Rest()
+            if len(event.pitches) > 1:
+                item = chord.Chord(list(event.pitches))
+            elif event.pitches:
+                item = note.Note(event.pitches[0])
+            else:
+                item = note.Rest()
             item.id = event.id
             item.duration.quarterLength = Fraction(event.duration)
             if event.tie:
@@ -66,7 +81,7 @@ def to_music21(score: Score) -> stream.Score:
                         "accent": articulations.Accent,
                     }[event.articulation]()
                 )
-            part.insert(Fraction(event.offset), item)
+            part.insert(event.start, item)
         result.insert(0, part)
     return result
 
@@ -79,33 +94,85 @@ def lily_pitch(value: str) -> str:
     return parsed.step.lower() + suffix + ("'" * octave if octave >= 0 else "," * -octave)
 
 
+NOTE_VALUES = sorted(
+    (
+        (Fraction(base) * scale, name + dots)
+        for base, name in (
+            (16, "\\longa"),
+            (8, "\\breve"),
+            (4, "1"),
+            (2, "2"),
+            (1, "4"),
+            (Fraction(1, 2), "8"),
+            (Fraction(1, 4), "16"),
+            (Fraction(1, 8), "32"),
+            (Fraction(1, 16), "64"),
+            (Fraction(1, 32), "128"),
+        )
+        for scale, dots in ((Fraction(7, 4), ".."), (Fraction(3, 2), "."), (1, ""))
+    ),
+    reverse=True,
+)
+
+
+def lily_durations(length: Fraction) -> list[str]:
+    """Written note values that add up to `length` quarters, longest first. Lengths that
+    no dotted value series can spell (tuplets) use one scaled quarter, as in schema 1."""
+    if length.denominator > 32 or length.denominator & (length.denominator - 1):
+        return [f"4*{length}"]
+    values = []
+    while length:
+        value, name = next(item for item in NOTE_VALUES if item[0] <= length)
+        values.append(name)
+        length -= value
+    return values
+
+
+ARTICULATIONS = {"staccato": "-.", "tenuto": "--", "accent": "->"}
+
+
 def lilypond_source(score: Score) -> str:
     tonic, mode = score.key.split()
     lily_key = lily_pitch(tonic.upper() + "3")
+    grid = score.grid
+    meters = {change.measure: change.meter for change in score.meter_map[1:]}
+    tempi = {change.measure: change.bpm for change in score.tempo_map[1:]}
     parts = []
     names = {}
     for index, track in enumerate(score.tracks):
         name = "voice" + chr(ord("A") + index // 26) + chr(ord("A") + index % 26)
         names[track.id] = name
         tokens = []
-        for event in sorted(track.events, key=lambda e: Fraction(e.offset)):
-            remaining = Fraction(event.duration)
-            position = Fraction(event.offset)
-            while remaining:
-                length = min(remaining, score.bar_length - position % score.bar_length)
-                token = (lily_pitch(event.pitch) if event.pitch else "r") + "4*" + str(length)
-                if event.articulation and position == Fraction(event.offset):
-                    token += {"staccato": "-.", "tenuto": "--", "accent": "->"}[event.articulation]
-                if event.pitch and (remaining > length or event.tie in {"start", "continue"}):
-                    token += "~"
-                tokens.append(token)
+        for event in sorted(track.events, key=lambda e: e.start):
+            if len(event.pitches) > 1:
+                head = "<" + " ".join(lily_pitch(p) for p in event.pitches) + ">"
+            else:
+                head = lily_pitch(event.pitches[0]) if event.pitches else "r"
+            position, first = event.start, True
+            while position < event.end:
+                measure = grid.measure_at(position)
+                bar_start, bar_end = grid.bounds(measure)
+                if position == bar_start and measure in meters:
+                    tokens.append(f"\\time {meters[measure]}")
+                if position == bar_start and measure in tempi:
+                    tokens.append(f"\\tempo 4 = {tempi[measure]}")
+                length = min(event.end, bar_end) - position
+                values = lily_durations(length)
+                for count, value in enumerate(values):
+                    token = head + value
+                    if first and event.articulation:
+                        token += ARTICULATIONS[event.articulation]
+                    first = False
+                    held = position + length < event.end or count < len(values) - 1
+                    if event.pitches and (held or event.tie in {"start", "continue"}):
+                        token += "~"
+                    tokens.append(token)
                 position += length
-                remaining -= length
-                if position % score.bar_length == 0:
+                if position == bar_end:
                     tokens.append("|")
         parts.append(
-            f"{name} = {{ \\time {score.meter} \\key {lily_key} \\{mode} "
-            f"\\tempo 4 = {score.tempo} " + " ".join(tokens) + " }"
+            f"{name} = {{ \\time {score.meter_map[0].meter} \\key {lily_key} \\{mode} "
+            f"\\tempo 4 = {score.tempo_map[0].bpm} " + " ".join(tokens) + " }"
         )
     if set(names) == {"soprano", "alto", "tenor", "bass"}:
         layout = (
@@ -117,7 +184,11 @@ def lilypond_source(score: Score) -> str:
             f"\\new Voice {{ \\voiceTwo \\{names['bass']} }} >> >>"
         )
     else:
-        layout = "<< " + " ".join(f"\\new Staff {{ \\{name} }}" for name in names.values()) + " >>"
+        staves = []
+        for track in score.tracks:
+            clef_name = "bass" if low_register(track) else "treble"
+            staves.append(f"\\new Staff {{ \\clef {clef_name} \\{names[track.id]} }}")
+        layout = "<< " + " ".join(staves) + " >>"
     title = score.title.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ")
     return (
         '\\version "2.24.3"\n'

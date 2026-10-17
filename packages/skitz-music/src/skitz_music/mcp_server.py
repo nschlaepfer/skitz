@@ -1,29 +1,66 @@
 """Local MCP tools for Codex and other MCP clients. No model or API key required."""
 
+import functools
+
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from .service import MusicService
+
+
+def explained(operation):
+    """Pass rejected edits and invalid input to the model; MCP hides other exception text."""
+
+    @functools.wraps(operation)
+    def call(*args, **kwargs):
+        try:
+            return operation(*args, **kwargs)
+        except (ValueError, OSError) as exc:
+            raise ToolError(str(exc)) from exc
+
+    return call
 
 
 def create_server(workspace: str) -> MCPServer:
     service = MusicService(workspace)
     server = MCPServer(
         "Skitz",
-        instructions="Editable music operations. Inspect revisions before edits; preserve protected tracks.",
+        instructions=(
+            "Editable music operations. Inspect revisions before edits; preserve protected "
+            "tracks. Scores are schema 2: events hold pitches (a chord when several), and "
+            "meter_map/tempo_map change at measure starts."
+        ),
     )
     descriptions = {
-        "create_project": "Create an editable score project with immutable protected tracks.",
-        "inspect_score": "Inspect events, track identities, meter and the current revision.",
-        "validate_score": "Check exact rhythm, track lengths and tie integrity.",
+        "create_project": (
+            "Create an editable score project with immutable protected tracks. Events need "
+            "exact quarter-note offset/duration strings and spelled pitches; every track "
+            "must fill whole measures of the meter_map."
+        ),
+        "inspect_score": (
+            "Inspect events (with the measures each spans), the measure grid with meter and "
+            "tempo per measure, track identities and the current revision."
+        ),
+        "validate_score": "Check exact rhythm, measure completeness, track lengths, ties and maps.",
         "analyze_voice_leading": "Find chorale-specific parallel fifths/octaves, crossings and range warnings.",
-        "apply_score_patch": "Apply pitch, tie or articulation edits to explicitly allowed measures at an expected revision.",
-        "compare_revisions": "Compare exact event changes and unchanged tracks between saved revisions.",
+        "apply_score_patch": (
+            "Apply edits, in order, at an expected revision. Ops: set (pitches, tie, "
+            "articulation, duration), insert, delete, split, merge, replace (rewrite a "
+            "track's whole measures), transpose (spelled interval), set_tempo, set_meter. "
+            "Nothing shifts implicitly: the result must have no gaps or overlaps. Every "
+            "measure whose events, barlines, meter or tempo change must be in "
+            "allowed_measures, and protected tracks cannot change."
+        ),
+        "compare_revisions": (
+            "Compare event changes (changed, added, removed), changed measures and "
+            "unchanged tracks between saved revisions."
+        ),
         "render_score": "Render notation, MIDI and optional audio with provenance and diagnostics.",
         "rollback": "Restore a saved revision while preserving protected tracks.",
         "export_project": "Export the accepted score, revision history and matching renders as a ZIP archive.",
     }
     for name, description in descriptions.items():
-        server.tool(name=name, description=description)(getattr(service, name))
+        server.tool(name=name, description=description)(explained(getattr(service, name)))
 
     from .suno import SunoService
 
