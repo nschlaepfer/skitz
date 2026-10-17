@@ -144,10 +144,61 @@ Each download folder gets a `manifest.json` with the request, clip metadata and 
 hashes, merged by clip id, so several songs can share a folder. Every generate request
 is also recorded in `~/.skitz/suno/requests.jsonl`, so a song imported later still
 knows its BPM. The agent uses `skitz_music.suno`, and MCP clients get `suno_credits`,
-`suno_generate`, `suno_status`, `suno_wait`, `suno_download`, `suno_inbox` and
-`suno_lyrics`. When Suno asks for a
-captcha, Skitz stops with exit code 4. Create one song by hand on suno.com, then
-retry. Skitz never tries to solve or get around a captcha.
+`suno_generate`, `suno_status`, `suno_wait`, `suno_download`, `suno_inbox`,
+`suno_library`, `suno_jobs` and `suno_lyrics`.
+
+**Letting the agent work without you.** These keep Skitz from stopping to ask:
+
+```sh
+uv run skitz suno library --search "JUJU B"      # find songs by title or style; shows which are downloaded
+uv run skitz suno budget set 50                  # credits per day the agent may spend unasked
+uv run skitz suno jobs                           # generations still open, with live status
+uv run skitz suno jobs --resume --wait-for-browser   # finish them after a restart or timeout
+uv run skitz suno generate -d "..." --wait-for-captcha   # hand a captcha to you, then carry on
+```
+
+- **Library.** `library` pages through your Suno songs (newest first, 20 per page) and
+  matches `--search` against title and style. It leaves out trashed songs and the stems
+  made on suno.com (`--stems` adds the stems back). Each song says whether its file is
+  already in `~/Downloads` or the inbox (`downloaded`) and where to download it
+  (`song_url`).
+- **Jobs.** Every generation is kept in `~/.skitz/suno/jobs.json` with its request and
+  output folder. If Skitz stops before the audio is saved, `jobs --resume` waits for
+  the clips and saves each job into its own folder. With `--wait-for-browser`, it also
+  opens the pages of songs that still need your Download click. `jobs --all` includes
+  finished jobs, and `jobs --dismiss <id>` stops tracking one.
+- **Budget.** Set a daily limit with `SKITZ_SUNO_BUDGET` or `skitz suno budget set N`
+  (the environment wins; `budget clear` removes the saved one). Before each generation
+  Skitz checks today's spending. It logs credits before and after to
+  `~/.skitz/suno/spend.jsonl`, and refuses with exit code 8 (`budget_exceeded`) when the
+  next generation would pass the limit. The next cost is the last measured one, or 10
+  credits until Skitz has measured one. Within the budget the agent generates without
+  asking each time. It never changes the budget itself.
+- **Captcha handoff.** When Suno asks for a captcha, Skitz stops with exit code 4. With
+  `--wait-for-captcha` (MCP `wait_for_captcha`), it opens suno.com/create in your
+  browser instead. You create one song there by hand and solve the captcha. Skitz checks
+  Suno's `/api/c/check` every 5 seconds, and once Suno stops asking, it retries the
+  generation once. Skitz never solves, scripts or gets around a captcha.
+- **Reconnect.** If the saved session expires, Skitz re-reads the Skitz Chrome profile
+  (`~/.skitz/suno/browser`) headlessly once, saves the new cookie and retries. It never
+  reads your everyday browser's profile. Only if that fails does it report
+  `auth_expired`. Set `SKITZ_SUNO_RECONNECT=0` to turn this off.
+- **Retries.** Requests are retried up to 3 times with jittered backoff on HTTP
+  429/502/503/504 and network errors, honoring `Retry-After` up to 60 seconds. A
+  generation is retried only when Suno surely didn't take it (429, 503, or a connection
+  that never opened). After a 502/504, check `library` before generating again.
+
+| Exit | `error_kind` | Who acts |
+|---|---|---|
+| 0 | | done |
+| 1 | `usage` | fix the arguments |
+| 2 | `api_error`, `network_error`, `generation_failed`, `not_ready` | retry later |
+| 3 | `auth_missing`, `auth_expired` | you: `skitz auth login suno` |
+| 4 | `captcha_required` | you: solve it on suno.com, or rerun with `--wait-for-captcha` |
+| 5 | `out_of_credits` | you |
+| 6 | `timeout` | `wait` again with the same ids, or `jobs --resume` |
+| 7 | `download_restricted` | you: click Download on each `song_urls` page |
+| 8 | `budget_exceeded` | you: raise the budget, or wait until tomorrow |
 
 ### Samples
 

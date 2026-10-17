@@ -3,15 +3,24 @@
 Suno has no public API; this uses the private endpoints its web app calls, which can
 change without notice. Generation spends the user's Suno credits. A captcha or an
 expired session stops with an explicit error for a human to resolve; nothing here
-tries to solve or get around a captcha.
+tries to solve or get around a captcha: with `wait_for_captcha`, Skitz opens suno.com
+for the person to solve it and only watches Suno's own check until it clears.
+
+Requests are retried with backoff on 429/502/503/504 and network errors. An expired
+session is refreshed once from the Skitz Chrome profile (never the everyday one). A
+daily credit budget (suno_budget) is checked before every generation.
 """
 
 import base64
+import email.utils
 import hashlib
 import json
 import os
+import random
 import sys
 import time
+import webbrowser
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -47,8 +56,25 @@ DONE, FAILED = {"complete"}, {"error"}
 
 CAPTCHA_MESSAGE = (
     "Suno requires a captcha. A person must open suno.com, create one song by hand, "
-    "then retry. If it still fails, reconnect with `skitz auth login suno`."
+    "then retry, or rerun with --wait-for-captcha (MCP: wait_for_captcha) to open "
+    "suno.com/create and wait for them. If it still fails, reconnect with "
+    "`skitz auth login suno`."
 )
+CAPTCHA_URL = "https://suno.com/create"
+CAPTCHA_POLL = 5.0
+CAPTCHA_HANDOFF = (
+    "[suno] Suno wants a captcha before it makes more songs. suno.com/create is open in "
+    "your browser: create one song there by hand and solve the captcha yourself. Skitz "
+    "waits until Suno stops asking (up to {timeout:.0f}s), then retries once."
+)
+
+# Transient failures worth another try. Only 429 and 503 are retried for a request that
+# spends credits: after a 502/504 or a dropped connection Suno may have taken it.
+RETRY_STATUSES = {429, 502, 503, 504}
+SAFE_RETRY_STATUSES = {429, 503}
+RETRY_TRIES = 3
+RETRY_MAX_WAIT = 60.0  # A longer Retry-After is reported instead of waited out.
+LIBRARY_PAGE = 20  # Clips per /api/feed/v2 page.
 
 # Exit codes for `skitz suno`, so agents can tell who has to act.
 EXIT_CODES = {
@@ -63,6 +89,7 @@ EXIT_CODES = {
     "out_of_credits": 5,
     "timeout": 6,
     "download_restricted": 7,
+    "budget_exceeded": 8,
 }
 
 
@@ -104,6 +131,21 @@ def save_cookie(cookie: str) -> Path:
     path.chmod(0o600)
     path.write_text(cookie.strip())
     return path
+
+
+def _retry_after(response: httpx.Response) -> float | None:
+    """Seconds from a Retry-After header (seconds or an HTTP date), if there is one."""
+    value = response.headers.get("retry-after", "").strip()
+    if not value:
+        return None
+    try:
+        return max(0.0, float(value))
+    except ValueError:
+        pass
+    try:
+        return max(0.0, email.utils.parsedate_to_datetime(value).timestamp() - time.time())
+    except (TypeError, ValueError):
+        return None
 
 
 def _jwt_expiry(token: str) -> float:
@@ -237,6 +279,26 @@ def build_payload(
     return payload
 
 
+BUDGET_MESSAGE = (
+    "Today's Suno budget is {daily_limit:g} credits, {spent_today:g} are spent and the next "
+    "generation costs about {next_cost:g}. A person must raise it (`skitz suno budget set "
+    "N` or SKITZ_SUNO_BUDGET) or wait until tomorrow."
+)
+
+
+def check_budget(model: str | None = None) -> dict:
+    """Raise `budget_exceeded` if one more generation would pass today's credit limit."""
+    from . import suno_budget
+
+    try:
+        state = suno_budget.status(model)
+    except ValueError as error:
+        raise SunoError("usage", str(error)) from None
+    if not state["allowed"]:
+        raise SunoError("budget_exceeded", BUDGET_MESSAGE.format(**state), budget=state)
+    return state
+
+
 def request_record(payload: dict, bpm: float | None) -> dict:
     """What a download manifest records: the request plus Skitz-only fields."""
     return {**payload, "skitz_bpm": bpm} if bpm else payload
@@ -245,10 +307,22 @@ def request_record(payload: dict, bpm: float | None) -> dict:
 class SunoClient:
     """Clerk session cookie -> short-lived JWT -> Suno studio API."""
 
-    def __init__(self, cookie: str | None = None, transport: httpx.BaseTransport | None = None):
+    def __init__(
+        self,
+        cookie: str | None = None,
+        transport: httpx.BaseTransport | None = None,
+        reconnect: Callable[[], str | None] | None = None,
+    ):
         # SUNO_JWT: a short-lived access token (about an hour) instead of a session cookie.
         self.static_jwt = None if cookie else (os.environ.get("SUNO_JWT", "").strip() or None)
         self.cookie = cookie or ("" if self.static_jwt else load_cookie())
+        # Only the saved login is refreshed; a cookie passed in (being checked) is not.
+        self.can_reconnect = (
+            not cookie
+            and not self.static_jwt
+            and os.environ.get("SKITZ_SUNO_RECONNECT", "1") != "0"
+        )
+        self.reconnect = reconnect
         self.http = httpx.Client(
             timeout=httpx.Timeout(30.0, connect=10.0),
             headers={"User-Agent": USER_AGENT},
@@ -260,8 +334,32 @@ class SunoClient:
         self._jwt_expiry = 0.0
         self.sleep = time.sleep
 
+    def _send(self, method: str, url: str, spends: bool = False, **kwargs: Any) -> httpx.Response:
+        """One HTTP request, tried up to RETRY_TRIES times with jittered backoff."""
+        for attempt in range(RETRY_TRIES):
+            last = attempt == RETRY_TRIES - 1
+            try:
+                response = self.http.request(method, url, **kwargs)
+            except httpx.TransportError as error:
+                never_sent = isinstance(error, httpx.ConnectError | httpx.ConnectTimeout)
+                if last or (spends and not never_sent):
+                    raise
+                wait, reason = 2.0**attempt, type(error).__name__
+            else:
+                retryable = SAFE_RETRY_STATUSES if spends else RETRY_STATUSES
+                if last or response.status_code not in retryable:
+                    return response
+                wait, reason = _retry_after(response), f"HTTP {response.status_code}"
+                if wait is not None and wait > RETRY_MAX_WAIT:
+                    return response
+                wait = 2.0**attempt if wait is None else wait
+            wait += random.uniform(0, 1)
+            print(f"[suno] {reason}; retrying in {wait:.1f}s", file=sys.stderr)
+            self.sleep(wait)
+        raise AssertionError("unreachable")
+
     def _clerk(self, method: str, path: str) -> dict:
-        response = self.http.request(
+        response = self._send(
             method,
             f"{CLERK_BASE}{path}",
             params={"_clerk_js_version": CLERK_JS_VERSION},
@@ -302,9 +400,40 @@ class SunoClient:
         self._jwt, self._jwt_expiry = jwt, _jwt_expiry(jwt)
         return jwt
 
-    def request(self, method: str, path: str, **kwargs: Any) -> Any:
+    def _reconnect(self) -> bool:
+        """Re-read the Skitz Chrome profile's Suno cookie once; True if it works."""
+        if not self.can_reconnect:
+            return False
+        if self.reconnect is None:
+            from .browser_login import refresh_cookie
+
+            self.reconnect = refresh_cookie
+        print("[suno] session expired; re-reading the Skitz Chrome profile", file=sys.stderr)
+        cookie = self.reconnect()
+        if not cookie or cookie == self.cookie:
+            return False
+        previous = self.cookie
+        self.cookie, self.session_id, self._jwt, self._jwt_expiry = cookie, None, None, 0.0
+        try:
+            self.token()
+        except SunoError:
+            self.cookie = previous
+            return False
+        save_cookie(cookie)
+        print("[suno] reconnected with the Skitz Chrome profile's session", file=sys.stderr)
+        return True
+
+    def request(self, method: str, path: str, spends: bool = False, **kwargs: Any) -> Any:
+        try:
+            return self._request(method, path, spends, **kwargs)
+        except SunoError as error:
+            if error.kind != "auth_expired" or not self._reconnect():
+                raise
+        return self._request(method, path, spends, **kwargs)
+
+    def _request(self, method: str, path: str, spends: bool = False, **kwargs: Any) -> Any:
         headers = {"Authorization": f"Bearer {self.token()}"}
-        response = self.http.request(method, f"{API_BASE}{path}", headers=headers, **kwargs)
+        response = self._send(method, f"{API_BASE}{path}", spends, headers=headers, **kwargs)
         if response.status_code == 401:
             raise SunoError(
                 "auth_expired", "Suno rejected the token. Reconnect with `skitz auth login suno`."
@@ -318,7 +447,20 @@ class SunoClient:
                 )
             if response.status_code == 402 or "credit" in lowered or "insufficient" in lowered:
                 raise SunoError("out_of_credits", "Not enough Suno credits.", body=body)
-            raise SunoError("api_error", f"Suno HTTP {response.status_code} on {path}", body=body)
+            extra = {"retry_after": _retry_after(response)} if response.status_code == 429 else {}
+            message = f"Suno HTTP {response.status_code} on {path}"
+            if spends and response.status_code in RETRY_STATUSES - SAFE_RETRY_STATUSES:
+                message += (
+                    ". Suno may have started it anyway: check `skitz suno library` before "
+                    "generating again."
+                )
+            raise SunoError(
+                "api_error",
+                message,
+                http_status=response.status_code,
+                body=body,
+                **extra,
+            )
         return response.json() if response.content else None
 
     def billing(self) -> dict:
@@ -331,28 +473,128 @@ class SunoClient:
             "monthly_usage": info.get("monthly_usage"),
         }
 
-    def captcha_required(self) -> bool:
+    def captcha_state(self) -> bool | None:
+        """Whether Suno wants a captcha before generating; None if the check failed."""
         try:
             result = self.request("POST", "/api/c/check", json={"ctype": "generation"}) or {}
         except SunoError as error:
             if error.kind in {"auth_expired", "auth_missing"}:
                 raise
-            return False  # Check unavailable; the generate call reports a captcha itself.
+            return None
         return bool(result.get("required"))
 
-    def generate(self, payload: dict) -> list[dict]:
-        if self.captcha_required():
-            raise SunoError("captcha_required", CAPTCHA_MESSAGE)
-        clips = (self.request("POST", GENERATE_PATH, json=payload) or {}).get("clips") or []
-        if not clips:
-            raise SunoError("api_error", "Suno accepted the request but returned no clips.")
+    def captcha_required(self) -> bool:
+        # An unavailable check counts as no; the generate call reports a captcha itself.
+        return bool(self.captcha_state())
+
+    def wait_for_captcha(
+        self,
+        timeout: float = 900,
+        interval: float = CAPTCHA_POLL,
+        opener: Callable[[str], Any] | None = None,
+    ) -> None:
+        """Open suno.com/create for the person to solve Suno's captcha, and wait until
+        Suno's check stops asking for one. Skitz never touches the captcha itself."""
+        (opener or webbrowser.open)(CAPTCHA_URL)
+        print(CAPTCHA_HANDOFF.format(timeout=timeout), file=sys.stderr)
+        deadline = time.monotonic() + timeout
+        while self.captcha_state() is not False:
+            if time.monotonic() >= deadline:
+                raise SunoError(
+                    "captcha_required",
+                    f"Suno still asks for a captcha after {timeout:.0f}s. A person must "
+                    f"create one song by hand at {CAPTCHA_URL}, then retry.",
+                    url=CAPTCHA_URL,
+                )
+            self.sleep(interval)
+
+    def generate(
+        self,
+        payload: dict,
+        request: dict | None = None,
+        output_dir: Path | None = None,
+        wait_for_captcha: bool = False,
+        captcha_timeout: float = 900,
+    ) -> list[dict]:
+        """Start a generation (2 clips) inside the daily budget, and record it.
+
+        The request goes to requests.jsonl and jobs.json (with `output_dir`, where its
+        audio should be saved), and the credits spent to spend.jsonl. With
+        `wait_for_captcha`, a captcha opens suno.com/create for the person and this
+        retries once after Suno stops asking.
+        """
+        from . import suno_budget, suno_jobs
+        from .suno_inbox import remember_request
+
+        check_budget(payload.get("mv"))
+        try:
+            clips, before = self._submit(payload)
+        except SunoError as error:
+            if error.kind != "captcha_required" or not wait_for_captcha:
+                raise
+            self.wait_for_captcha(captcha_timeout)
+            clips, before = self._submit(payload)
+        ids = [clip["id"] for clip in clips]
+        remember_request(ids, request or payload)
+        suno_jobs.add(ids, request or payload, output_dir)
+        try:
+            after = self._credits()
+        except SunoError:
+            after = None
+        suno_budget.record(ids, payload.get("mv"), before, after)
         return clips
 
+    def _credits(self) -> float | None:
+        try:
+            credits = self.billing().get("credits")
+        except SunoError as error:
+            if error.kind in {"auth_expired", "auth_missing"}:
+                raise
+            return None
+        return float(credits) if isinstance(credits, int | float) else None
+
+    def _submit(self, payload: dict) -> tuple[list[dict], float | None]:
+        """Send the generate request; returns the clips and the credits before it."""
+        if self.captcha_required():
+            raise SunoError("captcha_required", CAPTCHA_MESSAGE)
+        before = self._credits()
+        data = self.request("POST", GENERATE_PATH, spends=True, json=payload) or {}
+        clips = data.get("clips") or []
+        if not clips:
+            raise SunoError("api_error", "Suno accepted the request but returned no clips.")
+        return clips, before
+
     def feed(self, ids: list[str]) -> list[dict]:
-        data = self.request("GET", "/api/feed/v2", params={"ids": ",".join(ids)})
-        clips = data.get("clips", []) if isinstance(data, dict) else (data or [])
-        by_id = {clip.get("id"): clip for clip in clips}
+        by_id = {}
+        for start in range(0, len(ids), 50):  # Keep the query string short.
+            chunk = ids[start : start + 50]
+            data = self.request("GET", "/api/feed/v2", params={"ids": ",".join(chunk)})
+            clips = data.get("clips", []) if isinstance(data, dict) else (data or [])
+            by_id.update({clip.get("id"): clip for clip in clips})
         return [by_id.get(clip_id, {"id": clip_id, "status": "unknown"}) for clip_id in ids]
+
+    def library(
+        self, search: str | None = None, limit: int = 20, pages: int = 25, stems: bool = False
+    ) -> list[dict]:
+        """The account's songs, newest first, without trashed clips (and without stems
+        unless `stems`). With `search`, only those whose title or style contains it
+        (case-insensitive), looking through up to `pages` feed pages of 20 clips."""
+        wanted = (search or "").strip().lower()
+        found: list[dict] = []
+        for page in range(pages):
+            data = self.request("GET", "/api/feed/v2", params={"page": page})
+            clips = _items(data)
+            for clip in clips:
+                meta = clip.get("metadata") or {}
+                if clip.get("is_trashed") or (meta.get("stem_from_id") and not stems):
+                    continue
+                text = f"{clip.get('title') or ''} {meta.get('tags') or ''}"
+                if not wanted or wanted in text.lower():
+                    found.append(clip)
+            more = data.get("has_more") if isinstance(data, dict) else None
+            if len(found) >= limit or more is False or len(clips) < LIBRARY_PAGE:
+                break
+        return found[:limit]
 
     def wait(self, ids: list[str], timeout: float = 600, interval: float = 5) -> list[dict]:
         deadline = time.time() + timeout
@@ -360,6 +602,9 @@ class SunoClient:
             clips = self.feed(ids)
             settled = all(clip.get("status") in DONE | FAILED for clip in clips)
             if settled and all(c.get("audio_url") for c in clips if c.get("status") in DONE):
+                from .suno_jobs import note_clips
+
+                note_clips(clips)
                 return clips
             if time.time() >= deadline:
                 raise SunoError(
@@ -468,6 +713,9 @@ class SunoClient:
                 matches = suno_inbox.match(needed, suno_inbox.scan()) if needed else {}
             files += suno_inbox.import_downloads(needed, matches, directory, request)
         suno_inbox.write_manifest(directory, clips, files, request)
+        from .suno_jobs import note_download
+
+        note_download(clips, files)
         result = {"directory": str(directory), "files": files}
         saved = {entry["clip_id"] for entry in files}
         missing = [clip["id"] for clip in restricted if clip["id"] not in saved]
@@ -504,7 +752,9 @@ class SunoService:
         return result
 
     def suno_credits(self) -> dict:
-        return self.client.billing()
+        from .suno_budget import status
+
+        return {**self.client.billing(), "budget": status()}
 
     def suno_generate(
         self,
@@ -519,19 +769,37 @@ class SunoService:
         timeout: float = 240,
         bpm: float | None = None,
         wait_for_browser: bool = False,
+        wait_for_captcha: bool = False,
+        captcha_timeout: float = 600,
     ) -> dict:
         payload = build_payload(
             description, lyrics, tags, title, negative_tags, instrumental, model, bpm
         )
-        from .suno_inbox import remember_request
-
-        clips = self.client.generate(payload)
-        ids = [clip["id"] for clip in clips]
+        target = self._output(output_dir) if output_dir else None
         request = request_record(payload, bpm)
-        remember_request(ids, request)
+        clips = self.client.generate(payload, request, target, wait_for_captcha, captcha_timeout)
+        ids = [clip["id"] for clip in clips]
         if not output_dir:
             return {"status": "submitted", "ids": ids, "clips": [slim(c) for c in clips]}
         return self.suno_wait(ids, output_dir, timeout, request, wait_for_browser)
+
+    def suno_library(self, search: str | None = None, limit: int = 20, stems: bool = False) -> dict:
+        return library_listing(self.client, search, limit, stems=stems)
+
+    def suno_jobs(
+        self,
+        resume: bool = False,
+        wait_for_browser: bool = False,
+        timeout: float = 300,
+        include_closed: bool = False,
+    ) -> dict:
+        from . import suno_jobs
+
+        if resume:
+            return suno_jobs.resume(
+                self.client, timeout, wait_for_browser=wait_for_browser, root=self.workspace
+            )
+        return suno_jobs.listing(self.client, include_closed)
 
     def suno_status(self, ids: list[str]) -> dict:
         return {"clips": [slim(clip) for clip in self.client.feed(ids)]}
@@ -590,6 +858,30 @@ class SunoService:
 
     def suno_lyrics(self, prompt: str) -> dict:
         return self.client.lyrics(prompt)
+
+
+def library_listing(
+    client: SunoClient,
+    search: str | None = None,
+    limit: int = 20,
+    pages: int = 25,
+    stems: bool = False,
+) -> dict:
+    """Songs on the account (newest first), each marked `downloaded` when its file is
+    already in ~/Downloads or the inbox, with the page to download it from otherwise."""
+    from .suno_inbox import scan, song_url
+
+    clips = client.library(search, limit, pages, stems)
+    downloaded = {entry["clip_id"] for entry in scan() if entry.get("clip_id")}
+    songs = []
+    for clip in clips:
+        song = {**slim(clip), "created_at": clip.get("created_at")}
+        stem_of = (clip.get("metadata") or {}).get("stem_from_id")
+        if stem_of:
+            song["stem_from_id"] = stem_of
+        song.update(downloaded=clip.get("id") in downloaded, song_url=song_url(clip["id"]))
+        songs.append(song)
+    return {"search": search, "count": len(songs), "songs": songs}
 
 
 def inbox_listing() -> dict:

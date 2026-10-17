@@ -8,6 +8,10 @@ a browser with a debugging connection open:
 2. Once that window is closed, Skitz reopens the same profile headless with a local
    debugging port, reads the auth.suno.com cookies, confirms them with Suno and saves
    them. The profile stays, so later sign-ins are usually just a click.
+
+When the saved session expires, `refresh_cookie` re-reads that profile headlessly so
+Skitz can reconnect without the user. It refuses any path inside a browser's own
+profile folders, so the everyday browser is never read.
 """
 
 import json
@@ -28,6 +32,17 @@ CHROME_PATHS = (
 )
 SIGN_IN_URL = "https://suno.com/sign-in"
 AUTH_HOST = "auth.suno.com"
+# Where browsers keep people's own profiles; the Skitz profile must be outside these.
+EVERYDAY_PROFILE_ROOTS = (
+    "~/Library/Application Support/Google",
+    "~/Library/Application Support/Chromium",
+    "~/Library/Application Support/BraveSoftware",
+    "~/Library/Application Support/Microsoft Edge",
+    "~/.config/google-chrome",
+    "~/.config/chromium",
+    "~/.config/BraveSoftware",
+    "~/.config/microsoft-edge",
+)
 
 
 def find_chrome() -> str | None:
@@ -44,8 +59,26 @@ def find_chrome() -> str | None:
 
 
 def profile_dir() -> Path:
-    default = Path.home() / ".skitz/suno/browser"
+    from .suno_inbox import suno_home
+
+    default = suno_home() / "browser"
     return Path(os.environ.get("SKITZ_SUNO_BROWSER_PROFILE", str(default))).expanduser()
+
+
+def is_everyday_profile(path: Path) -> bool:
+    resolved = path.expanduser().resolve()
+    roots = [Path(root).expanduser().resolve() for root in EVERYDAY_PROFILE_ROOTS]
+    return any(resolved == root or resolved.is_relative_to(root) for root in roots)
+
+
+def skitz_profile() -> Path:
+    profile = profile_dir()
+    if is_everyday_profile(profile):
+        raise RuntimeError(
+            f"{profile} belongs to your everyday browser; Skitz only uses its own profile. "
+            "Unset SKITZ_SUNO_BROWSER_PROFILE."
+        )
+    return profile
 
 
 def auth_cookie_header(cookies: list[dict]) -> str | None:
@@ -173,6 +206,25 @@ def read_auth_cookies(chrome: str, profile: Path) -> str | None:
         window.close()
 
 
+def refresh_cookie(chrome: str | None = None) -> str | None:
+    """The Skitz profile's current auth.suno.com Cookie header, read headlessly.
+
+    None when there is nothing to read (no profile yet, no Chrome, or Chrome couldn't
+    start, for example because the Skitz window is open). Never opens a window.
+    """
+    try:
+        profile = skitz_profile()
+    except RuntimeError:
+        return None
+    chrome = chrome or find_chrome()
+    if not chrome or not profile.is_dir():
+        return None
+    try:
+        return read_auth_cookies(chrome, profile)
+    except Exception:  # Best effort: the caller reports the expired session instead.
+        return None
+
+
 def wait_for_login(
     accept: Callable[[str], dict | None],
     chrome: str | None = None,
@@ -187,7 +239,7 @@ def wait_for_login(
     chrome = chrome or find_chrome()
     if not chrome:
         raise RuntimeError("No Chrome, Chromium, Brave or Edge found (set SKITZ_CHROME).")
-    profile = profile_dir()
+    profile = skitz_profile()
     header = read_auth_cookies(chrome, profile)
     account = accept(header) if header else None
     if account is not None:

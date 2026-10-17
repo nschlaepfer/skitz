@@ -11,7 +11,16 @@ import httpx
 import pytest
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
-from skitz_music import samples, suno, suno_cli, suno_inbox
+from skitz_music import (
+    browser_login,
+    mcp_server,
+    samples,
+    suno,
+    suno_budget,
+    suno_cli,
+    suno_inbox,
+    suno_jobs,
+)
 
 
 def fake_jwt() -> str:
@@ -34,11 +43,31 @@ class FakeSuno:
         self.songs_forbidden = False  # Songs too: Suno's state since October 2026.
         self.titles: dict[str, str] = {}
         self.durations: dict[str, float] = {}
+        self.cookies = {"__client=test"}  # Sessions Clerk accepts.
+        self.profile_cookie: str | None = None  # What the Skitz Chrome profile holds.
+        self.credits = 2400
+        self.cost = 10  # Credits Suno takes per generation.
+        self.captcha_checks = 0
+        self.captcha_clears_after: int | None = None  # A person solved it on suno.com.
+        self.library: list[dict] = []
+        self.pages: list[int] = []
+        # Failures to return first, by path: a status code, (status, headers) or exception.
+        self.failures: dict[str, list] = {}
+        self.calls: dict[str, int] = {}
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         url = request.url
+        self.calls[url.path] = self.calls.get(url.path, 0) + 1
+        queued = self.failures.get(url.path)
+        if queued:
+            failure = queued.pop(0)
+            if isinstance(failure, Exception):
+                raise failure
+            status, headers = failure if isinstance(failure, tuple) else (failure, {})
+            return httpx.Response(status, headers=headers, text="upstream trouble")
         if url.host == "auth.suno.com":
-            assert request.headers["cookie"] == "__client=test"
+            if request.headers["cookie"] not in self.cookies:
+                return httpx.Response(401)
             if self.clerk_status != 200:
                 return httpx.Response(self.clerk_status)
             if url.path == "/v1/client":
@@ -49,11 +78,15 @@ class FakeSuno:
             return httpx.Response(200, content=b"ID3 test audio")
         assert request.headers["authorization"] == f"Bearer {self.jwt}"
         if url.path == "/api/c/check":
+            self.captcha_checks += 1
+            if self.captcha_clears_after and self.captcha_checks > self.captcha_clears_after:
+                self.captcha = False
             return httpx.Response(200, json={"required": self.captcha})
         if url.path == "/api/billing/info/":
-            return httpx.Response(200, json={"total_credits_left": 2400})
+            return httpx.Response(200, json={"total_credits_left": self.credits})
         if url.path == "/api/generate/v2-web/":
             self.generated.append(json.loads(request.content))
+            self.credits -= self.cost
             return httpx.Response(200, json={"clips": [{"id": clip_id} for clip_id in self.ids]})
         if url.path == "/api/clip/song-1/stems/pages":
             return httpx.Response(200, json={"pages": 2 if self.stems_ready else 0})
@@ -89,6 +122,12 @@ class FakeSuno:
                 200,
                 json={"state": "complete", "downbeats": beats, "downbeat_presence_confidence": 1.0},
             )
+        if url.path == "/api/feed/v2" and "page" in url.params:
+            page = int(url.params["page"])
+            self.pages.append(page)
+            clips = self.library[page * 20 : page * 20 + 20]
+            more = len(self.library) > page * 20 + 20
+            return httpx.Response(200, json={"clips": clips, "current_page": page, "has_more": more})
         if url.path == "/api/feed/v2":
             self.polls += 1
             done = self.polls >= 3
@@ -115,7 +154,15 @@ def fake(monkeypatch, tmp_path):
     monkeypatch.setenv("SKITZ_SUNO_HOME", str(tmp_path / "suno-home"))
     monkeypatch.setenv("SKITZ_SUNO_WATCH", str(tmp_path / "Downloads"))
     monkeypatch.setattr(suno.time, "sleep", lambda seconds: None)
-    return FakeSuno()
+    fake = FakeSuno()
+    fake.refreshes = 0
+
+    def refresh_cookie():  # Never start a real Chrome.
+        fake.refreshes += 1
+        return fake.profile_cookie
+
+    monkeypatch.setattr(browser_login, "refresh_cookie", refresh_cookie)
+    return fake
 
 
 def run(fake, capsys, *argv):
@@ -278,6 +325,8 @@ def test_mcp_server_lists_suno_tools(tmp_path):
                     "suno_downbeats",
                     "suno_download",
                     "suno_inbox",
+                    "suno_library",
+                    "suno_jobs",
                     "samples_info",
                     "samples_loops",
                     "samples_hits",
@@ -450,3 +499,334 @@ def test_rerunning_a_download_reuses_files_already_imported(fake, capsys, tmp_pa
     code, result = run(fake, capsys, "download", SONG_A, "--out", str(out), "--wait-for-browser")
     assert code == 0, result
     assert [f["clip_id"] for f in result["files"]] == [SONG_A] and opened == []
+
+
+# --- retries ------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def sleeps(monkeypatch):
+    waited: list[float] = []
+    monkeypatch.setattr(suno.time, "sleep", waited.append)
+    return waited
+
+
+def test_transient_errors_are_retried_with_backoff_and_retry_after(fake, capsys, sleeps):
+    fake.failures["/api/billing/info/"] = [(503, {"Retry-After": "7"}), 429]
+    code, result = run(fake, capsys, "whoami")
+    assert code == 0 and result["credits"] == 2400
+    assert fake.calls["/api/billing/info/"] == 3
+    assert 7 <= sleeps[0] <= 8  # Retry-After, plus up to 1 s of jitter
+    assert 2 <= sleeps[1] <= 3  # Second backoff step
+
+
+def test_retries_stop_after_three_tries(fake, capsys, sleeps):
+    fake.failures["/api/billing/info/"] = [502, 504, 503, 503]
+    code, result = run(fake, capsys, "whoami")
+    assert (code, result["error_kind"], result["http_status"]) == (2, "api_error", 503)
+    assert fake.calls["/api/billing/info/"] == 3 and len(sleeps) == 2
+
+
+def test_network_errors_are_retried(fake, capsys, sleeps):
+    fake.failures["/api/feed/v2"] = [httpx.ReadTimeout("slow"), httpx.ConnectError("down")]
+    code, result = run(fake, capsys, "status", "clip-aaaa1")
+    assert code == 0 and result["clips"][0]["id"] == "clip-aaaa1"
+    assert len(sleeps) == 2
+
+
+def test_a_long_retry_after_is_reported_not_waited_out(fake, capsys, sleeps):
+    fake.failures["/api/billing/info/"] = [(429, {"Retry-After": "3600"})]
+    code, result = run(fake, capsys, "whoami")
+    assert code == 2 and result["retry_after"] == 3600 and sleeps == []
+
+
+def test_generation_is_retried_only_when_suno_surely_did_not_take_it(fake, capsys, sleeps):
+    path = "/api/generate/v2-web/"
+    fake.failures[path] = [503]  # Unavailable: nothing was started, so try again.
+    assert run(fake, capsys, "generate", "-d", "a song")[0] == 0
+    assert fake.calls[path] == 2 and len(fake.generated) == 1
+    fake.failures[path] = [504]  # Gateway timeout: it may have gone through.
+    code, result = run(fake, capsys, "generate", "-d", "a song")
+    assert (code, result["error_kind"]) == (2, "api_error")
+    assert "skitz suno library" in result["error"]
+    assert fake.calls[path] == 3
+    fake.failures[path] = [httpx.ReadTimeout("no answer")]
+    code, result = run(fake, capsys, "generate", "-d", "a song")
+    assert (code, result["error_kind"]) == (2, "network_error")
+    assert fake.calls[path] == 4
+
+
+# --- library ------------------------------------------------------------------------------
+
+
+def library_song(index: int, title: str | None = None) -> dict:
+    return {
+        "id": f"lib-{index:04d}",
+        "status": "complete",
+        "title": title or f"Song {index}",
+        "audio_url": "https://studio-api.prod.suno.com/api/forbidden",
+        "created_at": f"2026-10-{17 - index // 20:02d}T12:00:00Z",
+        "metadata": {"tags": "lofi, rain" if index % 2 else "synthwave", "duration": 120.0},
+    }
+
+
+def test_library_search_pages_through_and_marks_downloads(fake, capsys, monkeypatch, tmp_path):
+    fake.library = [library_song(i) for i in range(45)]
+    fake.library[33] = library_song(33, "JUJU B (Remastered)")
+    # Suno's feed also holds stems made on suno.com, and the trash.
+    fake.library[3] = library_song(3, "JUJU B (Remastered) (Vocals)")
+    fake.library[3]["metadata"]["stem_from_id"] = "lib-0033"
+    fake.library[4] = {**library_song(4, "JUJU B (Remastered)"), "is_trashed": True}
+    monkeypatch.setattr(
+        suno_inbox,
+        "scan",
+        lambda dirs=None: [{"clip_id": "lib-0033", "path": tmp_path / "x.m4a", "duration": 120}],
+    )
+    code, result = run(fake, capsys, "library", "--search", "juju b (remastered)")
+    assert code == 0, result
+    assert fake.pages == [0, 1, 2]  # Stops at the short last page.
+    [song] = result["songs"]
+    assert song["title"] == "JUJU B (Remastered)" and song["downloaded"] is True
+    assert song["audio_url"] is None and song["song_url"].endswith("/song/lib-0033")
+
+    code, result = run(fake, capsys, "library", "-s", "JUJU B", "--stems")
+    assert [s["id"] for s in result["songs"]] == ["lib-0003", "lib-0033"]
+    assert result["songs"][0]["stem_from_id"] == "lib-0033"
+
+    fake.pages.clear()
+    code, result = run(fake, capsys, "library", "--limit", "25")
+    assert fake.pages == [0, 1] and result["count"] == 25
+    assert [s["downloaded"] for s in result["songs"]].count(True) == 0
+    code, result = run(fake, capsys, "library", "-s", "SYNTHWAVE", "-n", "3")
+    assert [s["id"] for s in result["songs"]] == ["lib-0000", "lib-0002", "lib-0006"]
+    fake.pages.clear()
+    code, result = run(fake, capsys, "library", "-s", "juju", "--pages", "1")
+    assert result["songs"] == [] and fake.pages == [0]
+
+
+# --- jobs ---------------------------------------------------------------------------------
+
+
+def test_jobs_survive_a_restart_and_resume_into_their_folder(fake, capsys, tmp_path):
+    out = tmp_path / "songs"
+    code, result = run(
+        fake, capsys, "generate", "-d", "night drive", "--out", str(out), "--timeout", "0"
+    )
+    assert code == 6  # Suno wasn't done; the process could exit here.
+    saved = json.loads((tmp_path / "suno-home/jobs.json").read_text())["jobs"]
+    assert saved[0]["ids"] == ["clip-aaaa1", "clip-bbbb2"]
+    assert saved[0]["output_dir"] == str(out.resolve())
+    assert saved[0]["request"]["gpt_description_prompt"] == "night drive"
+
+    code, listing = run(fake, capsys, "jobs")
+    assert code == 0 and listing["open"] == 1
+    assert [c["status"] for c in listing["jobs"][0]["clips"]] == ["streaming", "streaming"]
+
+    code, resumed = run(fake, capsys, "jobs", "--resume")
+    assert code == 0, resumed
+    [job] = resumed["jobs"]
+    assert job["state"] == "done" and all(c["saved_to"] for c in job["clips"])
+    names = sorted(p.name for p in out.glob("*.mp3"))
+    assert names == ["Night-Drive-clip-aaa.mp3", "Night-Drive-clip-bbb.mp3"]
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["request"]["gpt_description_prompt"] == "night drive"
+    assert run(fake, capsys, "jobs")[1]["jobs"] == []
+    assert run(fake, capsys, "jobs", "--all")[1]["jobs"][0]["state"] == "done"
+
+
+def test_finished_generations_close_their_job(fake, capsys, tmp_path):
+    code, _ = run(fake, capsys, "generate", "-d", "x", "--out", str(tmp_path / "a"))
+    assert code == 0
+    code, _ = run(fake, capsys, "generate", "-d", "y", "--wait")  # no folder asked for
+    assert code == 0
+    states = [job["state"] for job in suno_jobs.load()]
+    assert states == ["done", "complete"]
+
+
+def test_jobs_can_be_dismissed(fake, capsys):
+    code, result = run(fake, capsys, "generate", "-d", "x")
+    assert code == 0 and result["job"] == "clip-aaaa1"
+    assert run(fake, capsys, "jobs", "--dismiss", "clip-bbbb2")[1]["status"] == "dismissed"
+    assert run(fake, capsys, "jobs")[1]["jobs"] == []
+    code, result = run(fake, capsys, "jobs", "--dismiss", "nope")
+    assert (code, result["error_kind"]) == (1, "usage")
+
+
+@needs_ffmpeg
+def test_resume_imports_browser_downloads_when_they_arrive(fake, capsys, tmp_path):
+    fake.ids = [SONG_A, SONG_B]
+    forbidden_songs(fake)
+    out = tmp_path / "songs"
+    code, result = run(fake, capsys, "generate", "-t", "lofi", "-l", "x", "--out", str(out))
+    assert code == 7 and result["missing"] == [SONG_A, SONG_B]
+    assert suno_jobs.load()[0]["state"] == "needs_download"
+
+    suno_download(tmp_path / "Downloads" / "a.m4a", SONG_A)
+    code, result = run(fake, capsys, "jobs", "--resume")
+    assert (code, result["error_kind"]) == (7, "download_restricted")
+    assert result["song_urls"] == [f"https://suno.com/song/{SONG_B}"]
+    [job] = result["jobs"]
+    assert job["state"] == "needs_download" and job["missing"] == [SONG_B]
+    assert [c["downloaded"] for c in job["clips"]] == [True, False]
+
+    suno_download(tmp_path / "Downloads" / "b.m4a", SONG_B)
+    code, result = run(fake, capsys, "jobs", "--resume")
+    assert code == 0 and result["jobs"][0]["state"] == "done"
+    assert len(json.loads((out / "manifest.json").read_text())["files"]) == 2
+
+
+def test_mcp_resume_stays_inside_the_workspace(fake, tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    client = suno.SunoClient(transport=httpx.MockTransport(fake))
+    client.generate(suno.build_payload("elsewhere"), output_dir=tmp_path / "outside")
+    fake.ids = ["clip-cccc3", "clip-dddd4"]
+    service = suno.SunoService(workspace, httpx.MockTransport(fake))
+    service.suno_generate(description="inside", output_dir="songs")
+    assert [job["state"] for job in suno_jobs.load()] == ["submitted", "done"]
+    result = service.suno_jobs(resume=True)
+    [job] = result["jobs"]
+    assert job["state"] == "needs_download" and "outside the workspace" in job["skipped"]
+    assert not (tmp_path / "outside").exists()
+
+
+# --- budget -------------------------------------------------------------------------------
+
+
+def test_budget_lets_generations_through_until_the_next_would_pass_it(fake, capsys, tmp_path):
+    assert run(fake, capsys, "budget", "set", "25")[1]["daily_limit"] == 25
+    assert run(fake, capsys, "generate", "-d", "one")[0] == 0
+    assert run(fake, capsys, "generate", "-d", "two")[0] == 0
+    code, result = run(fake, capsys, "generate", "-d", "three")
+    assert (code, result["error_kind"]) == (8, "budget_exceeded")
+    assert len(fake.generated) == 2  # Refused before anything was sent.
+    assert result["budget"] == {**result["budget"], "spent_today": 20, "remaining": 5}
+    ledger = [json.loads(line) for line in (tmp_path / "suno-home/spend.jsonl").open()]
+    assert [(e["credits_before"], e["credits_after"], e["spent"]) for e in ledger] == [
+        (2400, 2390, 10),
+        (2390, 2380, 10),
+    ]
+    assert ledger[0]["ids"] == ["clip-aaaa1", "clip-bbbb2"] and not ledger[0]["estimated"]
+    assert run(fake, capsys, "whoami")[1]["budget"]["remaining"] == 5
+    assert run(fake, capsys, "budget", "clear")[1]["daily_limit"] is None
+    assert run(fake, capsys, "generate", "-d", "three")[0] == 0
+
+
+def test_budget_from_the_environment_wins_and_dry_run_shows_it(fake, capsys, monkeypatch):
+    run(fake, capsys, "budget", "set", "100")
+    monkeypatch.setenv("SKITZ_SUNO_BUDGET", "5")
+    code, result = run(fake, capsys, "generate", "-d", "x", "--dry-run")
+    assert (code, result["error_kind"]) == (8, "budget_exceeded")
+    assert result["budget"]["source"] == "env" and result["budget"]["next_cost"] == 10
+    monkeypatch.setenv("SKITZ_SUNO_BUDGET", "lots")
+    assert run(fake, capsys, "generate", "-d", "x")[1]["error_kind"] == "usage"
+    assert fake.generated == []
+
+
+def test_unmeasured_spending_counts_the_expected_cost(fake, capsys):
+    fake.cost = 0  # Suno hadn't deducted yet when Skitz looked.
+    assert run(fake, capsys, "generate", "-d", "x")[0] == 0
+    [entry] = suno_budget.entries()
+    assert entry["spent"] == suno_budget.DEFAULT_COST and entry["estimated"]
+
+
+def test_only_todays_spending_counts(fake, capsys, tmp_path):
+    ledger = tmp_path / "suno-home/spend.jsonl"
+    ledger.parent.mkdir(parents=True)
+    ledger.write_text(json.dumps({"day": "2026-01-01", "spent": 15, "model": "chirp-crow"}) + "\n")
+    run(fake, capsys, "budget", "set", "20")
+    status = suno_budget.status("chirp-hawk")
+    assert status["spent_today"] == 0 and status["next_cost"] == 15  # Last measured cost
+    assert run(fake, capsys, "generate", "-d", "x")[0] == 0
+    status = suno_budget.status("chirp-hawk")
+    assert status["spent_today"] == 10 and status["next_cost"] == 10  # Same model wins
+    assert run(fake, capsys, "generate", "-d", "x")[0] == 0
+    assert run(fake, capsys, "generate", "-d", "x")[0] == 8
+
+
+def test_mcp_tools_report_suno_errors_to_the_model():
+    def refused():
+        raise suno.SunoError("budget_exceeded", "Ask first.", budget={"remaining": 0})
+
+    with pytest.raises(mcp_server.ToolError) as caught:
+        mcp_server.reported(refused)()
+    report = json.loads(str(caught.value))
+    assert report["error_kind"] == "budget_exceeded" and report["budget"]["remaining"] == 0
+
+
+# --- reconnect ----------------------------------------------------------------------------
+
+
+def test_expired_session_reconnects_from_the_skitz_profile(fake, capsys, tmp_path):
+    fake.cookies = {"__client=fresh"}  # The saved session no longer works...
+    fake.profile_cookie = "__client=fresh"  # ...but the Skitz Chrome profile has a new one.
+    code, result = run(fake, capsys, "whoami")
+    assert code == 0 and result["credits"] == 2400 and fake.refreshes == 1
+    saved = tmp_path / "cookie"
+    assert saved.read_text() == "__client=fresh" and saved.stat().st_mode & 0o777 == 0o600
+
+
+def test_reconnect_gives_up_after_one_try(fake, capsys, tmp_path):
+    fake.cookies = set()
+    fake.profile_cookie = "__client=also-stale"
+    code, result = run(fake, capsys, "whoami")
+    assert (code, result["error_kind"]) == (3, "auth_expired") and fake.refreshes == 1
+    assert not (tmp_path / "cookie").exists()
+    fake.profile_cookie = None
+    assert run(fake, capsys, "whoami")[0] == 3 and fake.refreshes == 2
+
+
+def test_a_cookie_being_checked_is_never_swapped(fake, capsys):
+    fake.profile_cookie = "__client=test"
+    code, result = run(fake, capsys, "login", "__client=wrong")
+    assert code == 3 and fake.refreshes == 0
+
+
+def test_refresh_reads_only_the_skitz_profile(monkeypatch, tmp_path):
+    reads = []
+    monkeypatch.setattr(browser_login, "find_chrome", lambda: "/fake/chrome")
+    monkeypatch.setattr(
+        browser_login,
+        "read_auth_cookies",
+        lambda chrome, profile: reads.append(profile) or "__client=fresh",
+    )
+    assert browser_login.refresh_cookie() is None  # No Skitz profile yet: nothing to read.
+    profile = tmp_path / "suno-home/browser"
+    profile.mkdir(parents=True)
+    assert browser_login.refresh_cookie() == "__client=fresh" and reads == [profile]
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    everyday = tmp_path / "Library/Application Support/Google/Chrome"
+    everyday.mkdir(parents=True)
+    monkeypatch.setenv("SKITZ_SUNO_BROWSER_PROFILE", str(everyday / "Default"))
+    assert browser_login.is_everyday_profile(everyday / "Default")
+    assert browser_login.refresh_cookie() is None and reads == [profile]
+    with pytest.raises(RuntimeError, match="everyday browser"):
+        browser_login.wait_for_login(lambda header: {}, chrome="/fake/chrome")
+
+
+# --- captcha handoff ----------------------------------------------------------------------
+
+
+def test_wait_for_captcha_hands_off_to_the_person_then_retries_once(fake, capsys, monkeypatch):
+    opened = []
+    monkeypatch.setattr(suno.webbrowser, "open", opened.append)
+    fake.captcha = True
+    fake.captcha_clears_after = 3  # Solved on suno.com while Skitz polls.
+    code, result = run(fake, capsys, "generate", "-d", "a song", "--wait-for-captcha")
+    assert code == 0, result
+    assert opened == ["https://suno.com/create"]
+    assert len(fake.generated) == 1 and fake.captcha_checks == 5
+
+
+def test_wait_for_captcha_gives_up_without_generating(fake, capsys, monkeypatch):
+    opened = []
+    monkeypatch.setattr(suno.webbrowser, "open", opened.append)
+    fake.captcha = True
+    code, result = run(
+        fake, capsys, "generate", "-d", "a", "--wait-for-captcha", "--captcha-timeout", "0"
+    )
+    assert (code, result["error_kind"]) == (4, "captcha_required")
+    assert opened == ["https://suno.com/create"] and fake.generated == []
+    code, result = run(fake, capsys, "generate", "-d", "a")  # Without the flag: no browser.
+    assert code == 4 and len(opened) == 1

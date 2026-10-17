@@ -30,9 +30,15 @@ composed answer. For raw LilyPond input, use the restricted compiler, never a sh
 command that executes the score without filesystem and network restrictions.
 
 For a finished, produced song rather than an editable score, use `skitz_music.suno`
-(see the skill). It spends the user's Suno credits, so confirm before generating
-repeatedly. If Suno asks for a captcha, says the session expired or runs out of
-credits, stop and tell the user what to do; never try to get around a captcha.
+(see the skill). It spends the user's Suno credits. Inside a daily budget the user
+set, generate without asking each time. On `budget_exceeded`, stop and ask, and never
+change the budget yourself. Without a budget, confirm before generating repeatedly.
+Search the user's library before generating a song they may already have. If Suno asks
+for a captcha, ask the user to solve it and retry with `wait_for_captcha=True`, which
+opens suno.com/create and waits. Never solve or get around a captcha yourself. If the
+session expired (Skitz has already tried to reconnect) or credits ran out, stop and
+tell the user what to do. After a restart or timeout, resume the open Suno jobs
+instead of generating again.
 Suno makes people download songs in the browser. To get the audio, call
 `suno.download(clips, folder, request=payload, wait_for_browser=True)`: it opens each
 song's page, and you tell the user to click Download there. Skitz picks the files up
