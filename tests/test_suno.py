@@ -270,6 +270,8 @@ def test_mcp_server_lists_suno_tools(tmp_path):
                     "samples_hits",
                     "samples_slice",
                     "samples_layer",
+                    "play_audio",
+                    "stop_audio",
                 } <= names
 
     asyncio.run(check())
