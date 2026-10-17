@@ -4,7 +4,8 @@
   skitz auth login           pick a provider from a menu
   skitz auth login suno      connect your Suno account (also: skitz login suno)
   skitz auth login chatgpt   connect your ChatGPT subscription (also: skitz login)
-  skitz auth logout suno     forget the saved Suno login
+  skitz auth login claude    connect Claude with an Anthropic API key
+  skitz auth logout suno     forget the saved Suno login (or: logout claude)
 
 ChatGPT uses OAuth in your browser. Suno has no sign-in for outside apps, so Skitz
 opens its own Chrome window (a separate profile under ~/.skitz): sign in to Suno
@@ -13,7 +14,9 @@ with Suno and saved privately (mode 600). Add --json for machine-readable output
 """
 
 import argparse
+import getpass
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -21,6 +24,7 @@ import sys
 import time
 import webbrowser
 from collections.abc import Callable
+from pathlib import Path
 
 import httpx
 
@@ -96,13 +100,120 @@ def suno_status(transport: httpx.BaseTransport | None = None) -> dict:
 
 
 def chatgpt_status() -> dict:
-    from .harness import doctor
+    from . import harness
+
+    status = {"provider": "chatgpt", "method": "OAuth subscription"}
+    try:
+        if not harness.chatgpt_configured():
+            return {**status, "connected": False}
+        usable = harness.chatgpt_usable()
+    except RuntimeError as error:
+        return {**status, "connected": False, "detail": str(error)}
+    if not usable:
+        return {**status, "connected": False, "detail": "Sign-in expired."}
+    return {**status, "connected": True, "model": harness.PROVIDERS["codex"]["default_model"]}
+
+
+CLAUDE_MODEL_CHECK = "claude-opus-5-5"
+
+
+def _check_claude_key(key: str) -> dict:
+    """Confirm the key with the Anthropic API (a free model lookup); raises SunoError-free errors."""
+    import anthropic
 
     try:
-        connected = doctor()["subscription_configured"]
-    except RuntimeError as error:
-        return {"provider": "chatgpt", "method": "OAuth", "connected": False, "detail": str(error)}
-    return {"provider": "chatgpt", "method": "OAuth", "connected": connected}
+        model = anthropic.Anthropic(api_key=key, max_retries=1).models.retrieve(CLAUDE_MODEL_CHECK)
+    except anthropic.AuthenticationError:
+        raise ValueError("Anthropic rejected that API key.") from None
+    except anthropic.PermissionDeniedError:
+        raise ValueError("That API key isn't allowed to use the Anthropic API.") from None
+    except anthropic.NotFoundError:
+        raise ValueError(
+            f"That key works, but {CLAUDE_MODEL_CHECK} isn't available to it."
+        ) from None
+    except anthropic.APIConnectionError as error:
+        raise ValueError(f"Couldn't reach the Anthropic API: {error}") from None
+    return {"model": model.id, "display_name": model.display_name}
+
+
+def _save_claude_key(key: str | None) -> Path:
+    """Store (or with None, remove) the key in Prime's auth.json, which the agent reads."""
+    from . import harness
+
+    path = harness.state_directory() / "auth.json"
+    data = harness.read_auth()
+    if key is None:
+        data.pop("anthropic", None)
+    else:
+        data["anthropic"] = {"type": "api_key", "key": key}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_suffix(".tmp")
+    temp.touch(mode=0o600)
+    temp.chmod(0o600)
+    temp.write_text(json.dumps(data, indent=2))
+    temp.replace(path)
+    return path
+
+
+def claude_status() -> dict:
+    from . import harness
+
+    status = {"provider": "claude", "method": "Anthropic API key"}
+    entry = harness.read_auth().get("anthropic") or {}
+    key = (
+        entry.get("key") if entry.get("type") == "api_key" else os.environ.get("ANTHROPIC_API_KEY")
+    )
+    if entry.get("type") == "oauth":
+        return {
+            **status,
+            "connected": False,
+            "detail": "A Claude subscription sign-in can't be used.",
+        }
+    if not key:
+        return {**status, "connected": False}
+    try:
+        _check_claude_key(key)
+    except ValueError as error:
+        return {**status, "connected": False, "detail": str(error)}
+    return {**status, "connected": True, "model": harness.PROVIDERS["claude"]["default_model"]}
+
+
+def login_claude(value: str | None = None) -> dict:
+    """Check an Anthropic API key and save it for the agent."""
+    if value is None and not sys.stdin.isatty():
+        value = sys.stdin.read()
+    if value is None and os.environ.get("ANTHROPIC_API_KEY"):
+        answer = input("Use the ANTHROPIC_API_KEY from your environment? [Y/n] ").strip().lower()
+        if answer in {"", "y", "yes"}:
+            value = os.environ["ANTHROPIC_API_KEY"]
+    if value is None:
+        print(
+            "Connect Claude\n  Create an API key at https://platform.claude.com/settings/keys "
+            "(usage is billed to that Console account),\n  then paste it below. "
+            "Claude Pro/Max subscription sign-in can't be used by Skitz.\n",
+            file=sys.stderr,
+        )
+        value = getpass.getpass("Anthropic API key (hidden): ")
+    key = value.strip()
+    if key.startswith("sk-ant-oat"):
+        raise suno.SunoError(
+            "auth_missing",
+            "That's a Claude subscription token. Use an Anthropic API key (sk-ant-api...).",
+        )
+    if not key:
+        raise suno.SunoError("auth_missing", "No API key was given.")
+    try:
+        model = _check_claude_key(key)
+    except ValueError as error:
+        raise suno.SunoError("auth_missing", str(error)) from None
+    path = _save_claude_key(key)
+    return {
+        "status": "connected",
+        "provider": "claude",
+        "method": "Anthropic API key",
+        "model": model["model"],
+        "saved_to": str(path),
+    }
 
 
 def _check(raw: str, transport: httpx.BaseTransport | None) -> tuple[str, dict]:
@@ -222,7 +333,7 @@ def show(result: dict | list, as_json: bool) -> None:
             print(f"{name}: {row['status'].replace('_', ' ')}")
         elif mark:
             extra = ", ".join(
-                f"{k} {row[k]}" for k in ("plan", "credits") if row.get(k) is not None
+                f"{k} {row[k]}" for k in ("plan", "credits", "model") if row.get(k) is not None
             )
             print(f"{name:8} connected ({row.get('method', '')}){'  ' + extra if extra else ''}")
         else:
@@ -238,43 +349,54 @@ def parser() -> argparse.ArgumentParser:
     commands = root.add_subparsers(dest="command")
     commands.add_parser("list", help="Show every provider and whether it is connected")
     login = commands.add_parser("login", help="Connect a provider")
-    login.add_argument("provider", nargs="?", choices=["suno", "chatgpt"])
-    login.add_argument("--value", help="Suno: pass the cookie instead of being prompted")
+    login.add_argument("provider", nargs="?", choices=["suno", "chatgpt", "claude"])
+    login.add_argument("--value", help="Pass the Suno cookie or Anthropic key instead of a prompt")
     logout = commands.add_parser("logout", help="Forget a saved login")
-    logout.add_argument("provider", choices=["suno"])
+    logout.add_argument("provider", choices=["suno", "claude"])
     return root
 
 
 def choose_provider(prompt: Callable[[str], str] = input) -> str:
     print("Connect which provider?\n  1) Suno     songs, stems, beat grids\n"
-          "  2) ChatGPT  the Skitz agent's model (subscription)", file=sys.stderr)  # fmt: skip
-    answer = prompt("Choose 1 or 2: ").strip().lower()
-    return {"1": "suno", "suno": "suno", "2": "chatgpt", "chatgpt": "chatgpt"}.get(answer, "")
+          "  2) ChatGPT  agent model through your subscription (default gpt-6.1-sol)\n"
+          "  3) Claude   agent model through an Anthropic API key (default claude-opus-5-5)",
+          file=sys.stderr)  # fmt: skip
+    answer = prompt("Choose 1, 2 or 3: ").strip().lower()
+    choices = {"1": "suno", "2": "chatgpt", "3": "claude"}
+    return choices.get(answer, answer if answer in {"suno", "chatgpt", "claude"} else "")
 
 
 def main(argv: list[str], transport: httpx.BaseTransport | None = None) -> int:
     args = parser().parse_args(argv)
     try:
         if args.command in (None, "list"):
-            show([suno_status(transport), chatgpt_status()], args.json)
+            show([suno_status(transport), chatgpt_status(), claude_status()], args.json)
             return 0
         if args.command == "logout":
-            show(logout_suno(), args.json)
+            if args.provider == "claude":
+                _save_claude_key(None)
+                show({"status": "logged_out", "provider": "claude"}, args.json)
+            else:
+                show(logout_suno(), args.json)
             return 0
         provider = args.provider or (choose_provider() if sys.stdin.isatty() else "")
         if provider == "chatgpt":
             from .harness import login
 
             return login()
+        if provider == "claude":
+            show(login_claude(args.value), args.json)
+            return 0
         if provider != "suno":
-            raise suno.SunoError("usage", "Name a provider: skitz auth login suno|chatgpt")
+            raise suno.SunoError("usage", "Name a provider: skitz auth login suno|chatgpt|claude")
         show(login_suno(args.value, transport), args.json)
         return 0
     except suno.SunoError as error:
         if args.json:
             print(json.dumps(error.report(), indent=2))
         else:
-            print(f"Suno login failed: {error.message}", file=sys.stderr)
+            name = "Claude" if getattr(args, "provider", None) == "claude" else "Suno"
+            print(f"{name} login failed: {error.message}", file=sys.stderr)
         return error.exit_code
     except (KeyboardInterrupt, EOFError):
         print("\nCancelled.", file=sys.stderr)

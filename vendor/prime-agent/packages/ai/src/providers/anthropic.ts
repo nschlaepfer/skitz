@@ -746,11 +746,20 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 };
 
 /**
- * Fable/Mythos models think every turn and reject an explicit
- * `thinking: {type: "disabled"}` (and any sampling params) with a 400.
+ * Fable/Mythos models, Claude Opus 5.5 and Claude Sonnet 5.5 think every turn and
+ * reject an explicit `thinking: {type: "disabled"}` (and any sampling params) with a
+ * 400. On those, a "thinking off" request omits `thinking` and runs at the API default.
  */
 function isAlwaysOnAdaptiveThinkingModel(modelId: string): boolean {
-	return modelId.includes("fable-5") || modelId.includes("mythos-5") || modelId.includes("mythos-preview");
+	return (
+		modelId.includes("fable-5") ||
+		modelId.includes("mythos-5") ||
+		modelId.includes("mythos-preview") ||
+		modelId.includes("opus-5-5") ||
+		modelId.includes("opus-5.5") ||
+		modelId.includes("sonnet-5-5") ||
+		modelId.includes("sonnet-5.5")
+	);
 }
 
 /**

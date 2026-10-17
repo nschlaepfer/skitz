@@ -1,8 +1,8 @@
 # Skitz
 
-A terminal music agent. Sign in with your **ChatGPT
-subscription**, compose an editable score, render it, and make revisions that
-preserve protected tracks. No OpenAI API key is needed or used by the launcher.
+A terminal music agent. Run it on your **ChatGPT subscription** or on **Claude**
+with an Anthropic API key, compose an editable score, render it, and make revisions
+that preserve protected tracks.
 
 ## Start
 
@@ -27,9 +27,29 @@ Example request:
 > Protect the soprano. Validate, repair parallel fifths or octaves in the other
 > voices, and render a score and audio. Preserve all revisions.
 
-The initial model is Prime's pinned Codex default, `gpt-5.5`. Select another
-subscription model with `uv run skitz agent --model <model-id>` or `SKITZ_MODEL`.
-API-key providers and overrides are blocked. The terminal mark, window title,
+## Models
+
+| Provider | Sign in | Default model | Override |
+|---|---|---|---|
+| ChatGPT (`codex`) | `skitz login`: your ChatGPT subscription, OAuth | `gpt-6.1-sol` | `SKITZ_CODEX_MODEL` |
+| Claude (`claude`) | `skitz auth login claude`: an Anthropic API key, billed per use | `claude-opus-5-5` | `SKITZ_CLAUDE_MODEL` |
+
+```sh
+uv run skitz agent                          # whichever is connected; ChatGPT first
+uv run skitz agent --provider claude        # Claude Opus 5.5
+uv run skitz agent --model claude-sonnet-5-5
+uv run skitz agent --provider codex --model gpt-6-astra
+```
+
+`SKITZ_PROVIDER=claude` makes Claude the default. Skitz adds `gpt-6.1-sol` and
+`claude-opus-5-5` to the runtime's catalog through `~/.skitz/agent/models.json`, and
+keeps any entries you add there. Claude Pro/Max subscription sign-in isn't
+supported: Anthropic doesn't allow third-party apps to offer claude.ai login without
+its approval, so the runtime refuses Claude subscription tokens. Other API-key
+providers, `--api-key` and `--models` stay blocked. `skitz auth` shows whether each
+provider actually works, refreshing an expired ChatGPT sign-in where it can.
+
+The terminal mark, window title,
 help and subscription menu use the Skitz identity. First launch signs in with
 ChatGPT rather than opening an upstream onboarding flow. Internal runtime package
 names and protocol versions are preserved; the terminal's version label currently
@@ -78,7 +98,7 @@ back to copying the `__client` cookie from DevTools:
 
 ```sh
 uv run skitz auth login suno     # or: uv run skitz login suno
-uv run skitz auth                # status of Suno and ChatGPT
+uv run skitz auth                # status of Suno, ChatGPT and Claude
 uv run skitz suno whoami
 uv run skitz suno generate -d "warm lofi beat about rainy mornings" --out songs/rain
 uv run skitz suno generate --title "Night Drive" -t "synthwave, female vocals" \

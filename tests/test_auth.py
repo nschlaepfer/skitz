@@ -184,3 +184,52 @@ def test_auth_cookie_header_picks_only_auth_suno_com():
     ]
     assert auth_cookie_header(cookies) == "__client=abc"
     assert auth_cookie_header(cookies[1:]) is None
+
+
+# Built at runtime so no key-shaped literal sits in the repository for secret scanners.
+FAKE_API_KEY = "-".join(["sk", "ant", "api03", "placeholder"])
+FAKE_OAUTH_TOKEN = "-".join(["sk", "ant", "oat01", "placeholder"])
+
+
+@pytest.fixture
+def skitz_home(tmp_path, monkeypatch):
+    monkeypatch.setenv("SKITZ_HOME", str(tmp_path / "agent"))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    return tmp_path / "agent"
+
+
+def test_claude_login_checks_and_stores_an_api_key(skitz_home, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        auth_cli, "_check_claude_key", lambda key: seen.append(key) or {"model": "claude-opus-5-5"}
+    )
+    (skitz_home).mkdir(parents=True)
+    (skitz_home / "auth.json").write_text(json.dumps({"openai-codex": {"type": "oauth"}}))
+    result = auth_cli.login_claude(f"  {FAKE_API_KEY}  ")
+    assert result["status"] == "connected" and seen == [FAKE_API_KEY]
+    saved = json.loads((skitz_home / "auth.json").read_text())
+    assert saved["anthropic"] == {"type": "api_key", "key": FAKE_API_KEY}
+    assert saved["openai-codex"] == {"type": "oauth"}  # other sign-ins are kept
+    assert (skitz_home / "auth.json").stat().st_mode & 0o777 == 0o600
+    auth_cli._save_claude_key(None)
+    assert "anthropic" not in json.loads((skitz_home / "auth.json").read_text())
+
+
+def test_claude_login_refuses_subscription_tokens_and_bad_keys(skitz_home, monkeypatch):
+    with pytest.raises(suno.SunoError, match="subscription token"):
+        auth_cli.login_claude(FAKE_OAUTH_TOKEN)
+
+    def rejected(key):
+        raise ValueError("Anthropic rejected that API key.")
+
+    monkeypatch.setattr(auth_cli, "_check_claude_key", rejected)
+    with pytest.raises(suno.SunoError, match="rejected"):
+        auth_cli.login_claude(FAKE_API_KEY + "-bad")
+    assert not (skitz_home / "auth.json").exists()
+
+
+def test_claude_status_never_uses_a_subscription_sign_in(skitz_home):
+    skitz_home.mkdir(parents=True)
+    (skitz_home / "auth.json").write_text(json.dumps({"anthropic": {"type": "oauth"}}))
+    status = auth_cli.claude_status()
+    assert status["connected"] is False and "subscription" in status["detail"]

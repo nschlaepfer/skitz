@@ -36,10 +36,12 @@ def main() -> int:
 
         return samples_main(argv[1:])
     parser = argparse.ArgumentParser(
-        prog="skitz", description="Editable music with ChatGPT subscription sign-in"
+        prog="skitz", description="Editable music with a ChatGPT or Claude agent"
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("agent", help="Start the music agent with ChatGPT subscription sign-in")
+    commands.add_parser(
+        "agent", help="Start the music agent (--provider codex|claude, --model <id>)"
+    )
     auth = commands.add_parser("login", help="Sign in with your ChatGPT subscription")
     auth.add_argument("--status", action="store_true")
     commands.add_parser("doctor", help="Inspect local tools and subscription setup")
