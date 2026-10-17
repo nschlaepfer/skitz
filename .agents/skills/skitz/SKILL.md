@@ -24,7 +24,10 @@ not model-generated music or a Bach Benchmark score.
 For finished, produced songs, use the `suno_*` MCP tools or `uv run skitz suno`
 (`--help` lists exit codes). They use the user's own Suno session cookie and spend
 Suno credits; each generation makes 2 clips. If you get `captcha_required`,
-`auth_expired` or `out_of_credits`, stop and tell the user. Never work around a captcha.
+`auth_expired` or `out_of_credits`, stop and tell the user. Never work around a captcha. Suno currently blocks audio downloads for API clients
+(exit 7, `download_restricted`). Ask the user to download from suno.com instead, and
+never try to decrypt or work around it. `suno_stems` lists stems, and `suno_downbeats`
+gives the BPM and bar offset for cutting loops.
 
 To use Suno as a sample source, generate with a `bpm` (usually instrumental). Then
 cut the result with the `samples_*` MCP tools or `uv run skitz samples` (stems, loops,

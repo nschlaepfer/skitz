@@ -25,10 +25,12 @@ class FakeSuno:
         self.captcha = False
         self.clerk_status = 200
         self.generated: list[dict] = []
+        self.stems_ready = True
+        self.forbidden = False
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         url = request.url
-        if url.host == "clerk.suno.com":
+        if url.host == "auth.suno.com":
             assert request.headers["cookie"] == "__client=test"
             if self.clerk_status != 200:
                 return httpx.Response(self.clerk_status)
@@ -46,6 +48,40 @@ class FakeSuno:
         if url.path == "/api/generate/v2-web/":
             self.generated.append(json.loads(request.content))
             return httpx.Response(200, json={"clips": [{"id": "clip-aaaa1"}, {"id": "clip-bbbb2"}]})
+        if url.path == "/api/clip/song-1/stems/pages":
+            return httpx.Response(200, json={"pages": 2 if self.stems_ready else 0})
+        if url.path == "/api/clip/song-1/stems":
+            page = int(url.params.get("page", 0))
+            if page > 1:
+                return httpx.Response(400, json={"detail": "bad page"})
+            stems = []
+            for name in ("Vocals", "Backing_Vocals", "Drums", "Bass"):
+                audio = (
+                    "https://studio-api.prod.suno.com/api/forbidden"
+                    if self.forbidden
+                    else f"https://cdn1.suno.ai/stem-{page}-{name}.mp3"
+                )
+                stems.append(
+                    {
+                        "id": f"stem{page}-{name.lower()}",
+                        "status": "complete",
+                        "title": f"JUJU B ({name.replace('_', ' ')})",
+                        "audio_url": audio,
+                        "model_name": "chirp-haddock",
+                        "metadata": {
+                            "stem_type_group_name": name,
+                            "stem_task": "twelve",
+                            "stem_from_id": "song-1",
+                        },
+                    }
+                )
+            return httpx.Response(200, json={"stems": stems, "current_page": page})
+        if url.path == "/api/gen/song-1/downbeats":
+            beats = [[round(0.0422 + i * 0.764, 4), float(i % 4 + 1)] for i in range(16)]
+            return httpx.Response(
+                200,
+                json={"state": "complete", "downbeats": beats, "downbeat_presence_confidence": 1.0},
+            )
         if url.path == "/api/feed/v2":
             self.polls += 1
             done = self.polls >= 3
@@ -126,6 +162,51 @@ def test_bpm_goes_into_the_prompt_and_the_manifest(fake, capsys, tmp_path):
     assert json.loads((out / "manifest.json").read_text())["request"]["skitz_bpm"] == 90
 
 
+def test_stems_list_both_variants_with_readable_names(fake, capsys):
+    code, result = run(fake, capsys, "stems", "song-1")
+    assert code == 0, result
+    assert result["variants"] == 2 and result["variant"] == 1
+    assert [s["stem"] for s in result["stems"]] == ["Vocals", "Backing Vocals", "Drums", "Bass"]
+    code, result = run(fake, capsys, "stems", "song-1", "--variant", "2")
+    assert result["stems"][0]["id"] == "stem1-vocals"
+
+
+def test_stems_download_selected_parts(fake, capsys, tmp_path):
+    out = tmp_path / "stems"
+    code, result = run(fake, capsys, "stems", "song-1", "--only", "drums", "bass", "-o", str(out))
+    assert code == 0, result
+    assert sorted(p.name for p in out.glob("*.mp3")) == ["Bass-stem0-ba.mp3", "Drums-stem0-dr.mp3"]
+    manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["request"] == {"stem_from_id": "song-1", "variant": 1}
+
+
+def test_forbidden_audio_is_reported_not_downloaded(fake, capsys, tmp_path):
+    # Live Suno (October 2026) returns audio_url=/api/forbidden for stems and songs.
+    fake.forbidden = True
+    out = tmp_path / "stems"
+    code, result = run(fake, capsys, "stems", "song-1", "-o", str(out))
+    assert code == 7 and result["error_kind"] == "download_restricted"
+    assert "Download on suno.com" in result["error"]
+    assert not out.exists() or not list(out.glob("*.mp3"))
+    code, result = run(fake, capsys, "stems", "song-1")
+    assert code == 0 and result["stems"][0]["audio_url"] is None
+
+
+def test_stems_not_made_yet_says_where_to_start_them(fake, capsys):
+    fake.stems_ready = False
+    code, result = run(fake, capsys, "stems", "song-1")
+    assert code == 2 and result["error_kind"] == "not_ready"
+    assert "Get Stems" in result["error"]
+
+
+def test_downbeats_give_bpm_and_bar_offset(fake, capsys):
+    code, result = run(fake, capsys, "downbeats", "song-1")
+    assert code == 0
+    assert result["bpm"] == pytest.approx(78.53, abs=0.05)
+    assert result["first_downbeat"] == 0.0422
+    assert result["confidence"] == 1.0
+
+
 def test_captcha_stops_without_generating(fake, capsys):
     fake.captcha = True
     code, result = run(fake, capsys, "generate", "-d", "a song")
@@ -182,6 +263,8 @@ def test_mcp_server_lists_suno_tools(tmp_path):
                     "suno_status",
                     "suno_wait",
                     "suno_lyrics",
+                    "suno_stems",
+                    "suno_downbeats",
                     "samples_info",
                     "samples_loops",
                     "samples_hits",

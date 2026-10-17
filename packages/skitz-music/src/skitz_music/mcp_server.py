@@ -40,6 +40,16 @@ def create_server(workspace: str) -> FastMCP:
         "suno_status": "Show the status and audio URLs of Suno clips by id.",
         "suno_wait": "Wait for Suno clips to finish; with output_dir, save mp3s and a manifest.",
         "suno_lyrics": "Have Suno write song lyrics from a prompt (no credits).",
+        "suno_stems": (
+            "List the 12 stems (2 variants each) the user made for a clip on suno.com (Edit > "
+            "Get Stems). Suno does not let API clients download stem audio (it is encrypted "
+            "for the web player); ask the user to use Download there, then use samples_* tools. Creating stems needs a captcha in the "
+            "web app, so ask the user to start them there. For local splitting use samples_stems."
+        ),
+        "suno_downbeats": (
+            "Suno's beat grid for a clip, with bpm and first_downbeat: pass those to "
+            "samples_loops (bpm, offset) to cut on Suno's own bar lines."
+        ),
     }
     for name, description in suno_descriptions.items():
         server.tool(name=name, description=description)(getattr(suno, name))

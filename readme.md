@@ -67,17 +67,31 @@ uses your suno.com web session and its private endpoints. These can change witho
 notice, and automating them may conflict with Suno's terms. Every generation spends
 your Suno credits.
 
-Log in at suno.com, open DevTools, select any `clerk.suno.com` request and copy its
-`cookie` request header. Then:
+Log in at suno.com, then open `https://auth.suno.com/v1/client` in a new tab. In its
+DevTools, go to Application > Cookies > `https://auth.suno.com` and copy the `__client`
+value. Then pass it as `__client=<value>`:
 
 ```sh
-pbpaste | uv run skitz suno login -
+read -rs C && printf '__client=%s' "$C" | uv run skitz suno login -
 uv run skitz suno whoami
 uv run skitz suno generate -d "warm lofi beat about rainy mornings" --out songs/rain
 uv run skitz suno generate --title "Night Drive" -t "synthwave, female vocals" \
   --lyrics-file lyrics.txt -m v5 --out songs/night-drive
 uv run skitz suno lyrics "a sea shanty about debugging"
 ```
+
+**What works today (verified live, October 2026).** Credits, generation requests,
+status, lyrics, models (`skitz suno models --live`), stem listings and Suno's beat
+grid all work. **Audio downloads do not.** Suno now returns `audio_url:
+/api/forbidden` for songs and stems, and the alternative `media_urls` are encrypted
+for its web player. Skitz reports this as exit code 7 and does not try to get around
+it. Download songs or stems on suno.com (Get Stems > Download), then use
+`skitz samples` on the files. `skitz suno stems <clip>` lists a clip's 12 stems in 2
+variants. `skitz suno downbeats <clip>` returns Suno's BPM and bar-1 offset, which
+you can pass to `samples loops --bpm --offset`. Making stems needs a captcha in the
+web app, so start them there. The default model is v6 (`chirp-hawk`), and the
+sign-in host is `auth.suno.com`. A short-lived access token can stand in for the
+cookie through `SUNO_JWT`.
 
 The cookie is saved to `~/.skitz/suno/cookie` with mode 600 (or set `SUNO_COOKIE`).
 Each download folder gets a `manifest.json` with the request, clip metadata and file

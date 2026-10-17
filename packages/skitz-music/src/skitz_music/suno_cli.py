@@ -2,7 +2,8 @@
 
 Prints one JSON object to stdout; progress goes to stderr. Exit codes: 0 ok, 1 usage,
 2 API error, 3 cookie missing or expired, 4 captcha required, 5 out of credits,
-6 timed out (wait again with the same ids). Codes 3-5 need a person to act.
+6 timed out (wait again with the same ids), 7 Suno does not allow downloading that
+audio (stems: use Download on suno.com). Codes 3-5 and 7 need a person to act.
 """
 
 import argparse
@@ -18,9 +19,11 @@ from .suno import (
     SunoClient,
     SunoError,
     build_payload,
+    download_stems,
     request_record,
     save_cookie,
     slim,
+    tempo_from_downbeats,
 )
 
 
@@ -34,7 +37,8 @@ def parser() -> argparse.ArgumentParser:
     login = commands.add_parser("login", help="Check a suno.com cookie and save it")
     login.add_argument("cookie", help="The Cookie request header from suno.com, or - for stdin")
     commands.add_parser("whoami", help="Check the session and show credits")
-    commands.add_parser("models", help="List model aliases")
+    models = commands.add_parser("models", help="List model aliases")
+    models.add_argument("--live", action="store_true", help="Ask Suno which models you can use")
 
     def waiting(command: argparse.ArgumentParser) -> None:
         command.add_argument("--timeout", type=float, default=600)
@@ -66,6 +70,15 @@ def parser() -> argparse.ArgumentParser:
     download = commands.add_parser("download", help="Save finished clips as mp3")
     download.add_argument("ids", nargs="+")
     download.add_argument("-o", "--out", default=".")
+    stems = commands.add_parser(
+        "stems", help="List or download stems made on suno.com (Edit > Get Stems)"
+    )
+    stems.add_argument("clip_id")
+    stems.add_argument("-o", "--out", help="Save one variant's stems here")
+    stems.add_argument("--variant", type=int, default=1, help="Suno makes 2 of each stem (1 or 2)")
+    stems.add_argument("--only", nargs="+", help="Only these stems, e.g. --only drums bass")
+    beats = commands.add_parser("downbeats", help="Suno's beat grid for a clip")
+    beats.add_argument("clip_id")
     lyrics = commands.add_parser("lyrics", help="Have Suno write lyrics (no credits)")
     lyrics.add_argument("prompt")
     lyrics.add_argument("--timeout", type=float, default=60)
@@ -74,6 +87,8 @@ def parser() -> argparse.ArgumentParser:
 
 def run(args: argparse.Namespace, transport: httpx.BaseTransport | None = None) -> dict:
     if args.command == "models":
+        if args.live:
+            return {"default": DEFAULT_MODEL, "live": SunoClient(transport=transport).live_models()}
         return {"default": DEFAULT_MODEL, "aliases": MODELS}
     if args.command == "login":
         cookie = sys.stdin.read() if args.cookie == "-" else args.cookie
@@ -116,6 +131,12 @@ def run(args: argparse.Namespace, transport: httpx.BaseTransport | None = None) 
         if missing:
             raise SunoError("not_ready", "Some clips have no audio yet; wait first.", ids=missing)
         return client.download(clips, Path(args.out))
+    if args.command == "stems":
+        out = Path(args.out) if args.out else None
+        return download_stems(client, args.clip_id, out, args.variant, args.only)
+    if args.command == "downbeats":
+        data = client.downbeats(args.clip_id)
+        return {"clip_id": args.clip_id, **tempo_from_downbeats(data), "downbeats": data}
     if args.command == "lyrics":
         return client.lyrics(args.prompt, args.timeout)
     raise SunoError("usage", f"Unknown command {args.command}")

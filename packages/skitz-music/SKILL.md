@@ -67,15 +67,23 @@ from skitz_music.suno import SunoClient, SunoError, build_payload
 
 suno = SunoClient()  # reads SUNO_COOKIE or ~/.skitz/suno/cookie
 suno.billing()       # {"credits": ..., "plan": ...}
-payload = build_payload(description="warm lofi beat about rainy mornings", model="v4.5")
+payload = build_payload(description="warm lofi beat about rainy mornings", model="v6")
 # Custom mode: build_payload(lyrics="[Verse]\n...", tags="indie folk, male vocals", title="...")
 clips = suno.generate(payload)
 done = suno.wait([c["id"] for c in clips], timeout=300)
 suno.download(done, Path("songs/rainy-mornings"), request=payload)  # mp3s + manifest.json
 ```
 
+As of October 2026, Suno blocks audio downloads for API clients: `download` raises
+`SunoError` with kind `download_restricted` (exit code 7). Ask the user to download
+the song or stems on suno.com, then work on those files with `skitz_music.samples`.
+`suno.stems(clip_id)` lists the 12 stems in 2 variants, and
+`tempo_from_downbeats(suno.downbeats(clip_id))` gives `bpm` and `first_downbeat`.
+Pass those to `chop_loops(..., bpm=..., offset=...)` to cut on Suno's bar lines.
+Making stems needs a captcha in the web app, so never try to automate it.
+
 `suno.lyrics(prompt)` drafts lyrics without spending credits. Model aliases are
-`v3.5`, `v4`, `v4.5`, `v4.5+` and `v5`. Errors are `SunoError` with a `kind`. Stop and
+`v6` (default), `v6-wild`, `v6-mini`, and the older `v5`, `v4.5+`, `v4.5` and `v4`. Errors are `SunoError` with a `kind`. Stop and
 tell the user on `auth_missing` or `auth_expired` (save a fresh cookie with
 `skitz suno login -`), `captcha_required` (create one song by hand on suno.com) or
 `out_of_credits`. Never try to solve or get around a captcha. On `timeout`, call

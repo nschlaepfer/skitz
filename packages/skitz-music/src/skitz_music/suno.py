@@ -17,9 +17,11 @@ from typing import Any
 
 import httpx
 
-CLERK_BASE = "https://clerk.suno.com"
+# suno.com moved its Clerk frontend API from clerk.suno.com to auth.suno.com (October 2026).
+CLERK_BASE = os.environ.get("SUNO_CLERK_BASE", "https://auth.suno.com")
 CLERK_JS_VERSION = os.environ.get("SUNO_CLERK_JS_VERSION", "5.15.0")
-API_BASE = os.environ.get("SUNO_API_BASE", "https://studio-api.prod.suno.com")
+# Host observed from suno.com in October 2026 (it was studio-api.prod.suno.com before).
+API_BASE = os.environ.get("SUNO_API_BASE", "https://studio-api-prod.suno.com")
 GENERATE_PATH = os.environ.get("SUNO_GENERATE_PATH", "/api/generate/v2-web/")
 USER_AGENT = os.environ.get(
     "SUNO_USER_AGENT",
@@ -28,14 +30,18 @@ USER_AGENT = os.environ.get(
 )
 
 # Friendly names for Suno's internal model ids; any other value is sent unchanged.
+# The v6 ids come from /api/billing/info/ (October 2026); `skitz suno models --live`
+# lists what the account can use now. Older ids may no longer be accepted.
 MODELS = {
-    "v3.5": "chirp-v3-5",
-    "v4": "chirp-v4",
-    "v4.5": "chirp-auk",
-    "v4.5+": "chirp-bluejay",
+    "v6": "chirp-hawk",
+    "v6-wild": "chirp-hawk-wild",
+    "v6-mini": "chirp-goose",
     "v5": "chirp-crow",
+    "v4.5+": "chirp-bluejay",
+    "v4.5": "chirp-auk",
+    "v4": "chirp-v4",
 }
-DEFAULT_MODEL = os.environ.get("SUNO_MODEL", "v4.5")
+DEFAULT_MODEL = os.environ.get("SUNO_MODEL", "v6")
 
 DONE, FAILED = {"complete"}, {"error"}
 
@@ -56,6 +62,7 @@ EXIT_CODES = {
     "captcha_required": 4,
     "out_of_credits": 5,
     "timeout": 6,
+    "download_restricted": 7,
 }
 
 
@@ -108,6 +115,40 @@ def _jwt_expiry(token: str) -> float:
         return time.time() + 30
 
 
+RESTRICTED_MESSAGE = (
+    "Suno no longer lets API clients download audio: clips and stems come back with "
+    "audio_url set to /api/forbidden, and media_urls are encrypted for the web player "
+    "(seen October 2026). Use Download on suno.com (Get Stems > Download for stems), "
+    "then run `skitz samples` on the files."
+)
+
+
+def audio_source(clip: dict) -> tuple[str, str]:
+    """The downloadable audio URL and file extension for a clip."""
+    url = clip.get("audio_url") or ""
+    if url.endswith("/forbidden"):
+        raise SunoError("download_restricted", RESTRICTED_MESSAGE, id=clip.get("id"))
+    return url, ".mp3"
+
+
+def tempo_from_downbeats(data: Any, beats_per_bar: int = 4) -> dict:
+    """BPM and bar-1 offset from Suno's downbeats ([[seconds, beat_in_bar], ...])."""
+    beats = (data or {}).get("downbeats") if isinstance(data, dict) else None
+    times = [float(b[0]) for b in beats or [] if isinstance(b, list | tuple) and b]
+    if len(times) < 2:
+        return {"bpm": None, "first_downbeat": None}
+    gaps = sorted(b - a for a, b in zip(times, times[1:]) if b > a)
+    beat = gaps[len(gaps) // 2]
+    first = next((float(b[0]) for b in beats if len(b) > 1 and float(b[1]) == 1.0), times[0])
+    return {
+        "bpm": round(60.0 / beat, 2),
+        "first_downbeat": round(first, 4),
+        "beats_per_bar": beats_per_bar,
+        "beats": len(times),
+        "confidence": data.get("downbeat_presence_confidence"),
+    }
+
+
 def slim(clip: dict) -> dict:
     meta = clip.get("metadata") or {}
     return {
@@ -117,12 +158,35 @@ def slim(clip: dict) -> dict:
         "tags": meta.get("tags"),
         "duration": meta.get("duration"),
         "model": clip.get("model_name") or clip.get("major_model_version"),
-        "audio_url": clip.get("audio_url") or None,
+        "audio_url": None
+        if (clip.get("audio_url") or "").endswith("/forbidden")
+        else clip.get("audio_url") or None,
         "video_url": clip.get("video_url") or None,
         "image_url": clip.get("image_url") or None,
         "lyrics": meta.get("prompt") or None,
         "error": meta.get("error_message") or None,
     }
+
+
+def _items(data: Any) -> list[dict]:
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if isinstance(data, dict):
+        for key in ("clips", "stems", "items", "data", "results"):
+            if isinstance(data.get(key), list):
+                return _items(data[key])
+    return []
+
+
+def _stem(clip: dict) -> dict:
+    meta = clip.get("metadata") or {}
+    title = clip.get("title") or ""
+    name = meta.get("stem_type_group_name") or (
+        title.rsplit("(", 1)[-1].rstrip(")") if title.endswith(")") else None
+    )
+    name = name.replace("_", " ") if name else None
+    return {**slim(clip), "stem": name, "stem_task": meta.get("stem_task"),
+            "stem_from_id": meta.get("stem_from_id")}  # fmt: skip
 
 
 def build_payload(
@@ -168,7 +232,9 @@ class SunoClient:
     """Clerk session cookie -> short-lived JWT -> Suno studio API."""
 
     def __init__(self, cookie: str | None = None, transport: httpx.BaseTransport | None = None):
-        self.cookie = cookie or load_cookie()
+        # SUNO_JWT: a short-lived access token (about an hour) instead of a session cookie.
+        self.static_jwt = None if cookie else (os.environ.get("SUNO_JWT", "").strip() or None)
+        self.cookie = cookie or ("" if self.static_jwt else load_cookie())
         self.http = httpx.Client(
             timeout=httpx.Timeout(30.0, connect=10.0),
             headers={"User-Agent": USER_AGENT},
@@ -199,6 +265,12 @@ class SunoClient:
         return response.json() or {}
 
     def token(self) -> str:
+        if self.static_jwt:
+            if time.time() >= _jwt_expiry(self.static_jwt):
+                raise SunoError(
+                    "auth_expired", "SUNO_JWT has expired. Use a fresh token or cookie."
+                )
+            return self.static_jwt
         # Clerk issues tokens that last about a minute; refresh shortly before expiry.
         if self._jwt and time.time() < self._jwt_expiry - 10:
             return self._jwt
@@ -232,9 +304,10 @@ class SunoClient:
 
     def billing(self) -> dict:
         info = self.request("GET", "/api/billing/info/") or {}
+        plan = info.get("plan")
         return {
             "credits": info.get("total_credits_left"),
-            "plan": info.get("subscription_type") or info.get("plan"),
+            "plan": plan.get("name") if isinstance(plan, dict) else plan,
             "monthly_limit": info.get("monthly_limit"),
             "monthly_usage": info.get("monthly_usage"),
         }
@@ -277,6 +350,36 @@ class SunoClient:
                 )
             self.sleep(interval)
 
+    def live_models(self) -> list[dict]:
+        models = (self.request("GET", "/api/billing/info/") or {}).get("models") or []
+        keys = ("name", "external_key", "major_version", "is_default_model", "can_use")
+        return [{k: m.get(k) for k in keys} for m in models]
+
+    def stem_pages(self, clip_id: str) -> int:
+        """How many stem variants exist for a clip (Suno makes two of each stem)."""
+        return int(
+            (self.request("GET", f"/api/clip/{clip_id}/stems/pages") or {}).get("pages") or 0
+        )
+
+    def stems(self, clip_id: str) -> list[dict]:
+        """Stems already made for a clip in the web app, one entry per variant.
+
+        Suno makes two variants of every stem, shown as 1 and 2 in the web app; the API
+        pages them from 0. Making stems needs a captcha on suno.com, so it is not
+        automated here: start them in the web app (Edit > Get Stems), then read them here.
+        """
+        sets = []
+        for page in range(self.stem_pages(clip_id)):
+            data = self.request("GET", f"/api/clip/{clip_id}/stems", params={"page": page})
+            items = _items(data)
+            if items:
+                sets.append({"variant": page + 1, "stems": [_stem(item) for item in items]})
+        return sets
+
+    def downbeats(self, clip_id: str) -> Any:
+        """Suno's beat grid for a clip, as returned by the web app's endpoint."""
+        return self.request("GET", f"/api/gen/{clip_id}/downbeats")
+
     def lyrics(self, prompt: str, timeout: float = 60) -> dict:
         job = self.request("POST", "/api/generate/lyrics/", json={"prompt": prompt}) or {}
         if not job.get("id"):
@@ -296,12 +399,16 @@ class SunoClient:
         directory.mkdir(parents=True, exist_ok=True)
         files = []
         for clip in clips:
+            if (clip.get("audio_url") or "").endswith("/forbidden"):
+                raise SunoError("download_restricted", RESTRICTED_MESSAGE, id=clip.get("id"))
             if not clip.get("audio_url"):
                 continue
             name = re.sub(r"[^A-Za-z0-9_-]+", "-", clip.get("title") or "untitled").strip("-")
             path = directory / f"{name or 'untitled'}-{clip['id'][:8]}.mp3"
             digest = hashlib.sha256()
-            with self.http.stream("GET", clip["audio_url"]) as response:
+            url, extension = audio_source(clip)
+            path = path.with_suffix(extension)
+            with self.http.stream("GET", url) as response:
                 response.raise_for_status()
                 with path.open("wb") as handle:
                     for chunk in response.iter_bytes():
@@ -387,5 +494,64 @@ class SunoService:
             result["status"] = "failed"
         return result
 
+    def suno_stems(
+        self,
+        clip_id: str,
+        output_dir: str | None = None,
+        variant: int = 1,
+        only: list[str] | None = None,
+    ) -> dict:
+        target = self._output(output_dir) if output_dir else None
+        return download_stems(self.client, clip_id, target, variant, only)
+
+    def suno_downbeats(self, clip_id: str) -> dict:
+        data = self.client.downbeats(clip_id)
+        return {"clip_id": clip_id, **tempo_from_downbeats(data), "downbeats": data}
+
     def suno_lyrics(self, prompt: str) -> dict:
         return self.client.lyrics(prompt)
+
+
+def download_stems(
+    client: SunoClient,
+    clip_id: str,
+    directory: Path | None = None,
+    variant: int = 1,
+    only: list[str] | None = None,
+) -> dict:
+    """List a clip's stems; with a directory, save one variant as `<stem>.mp3`."""
+    sets = client.stems(clip_id)
+    if not sets:
+        raise SunoError(
+            "not_ready",
+            "No stems for this clip yet. Start them on suno.com (Edit > Get Stems), then retry.",
+            clip_id=clip_id,
+        )
+    chosen = next((s for s in sets if s["variant"] == variant), None)
+    if chosen is None:
+        available = [s["variant"] for s in sets]
+        raise SunoError("usage", f"No stem variant {variant}; available: {available}")
+    result: dict[str, Any] = {
+        "clip_id": clip_id,
+        "variants": len(sets),
+        "variant": variant,
+        "stems": chosen["stems"],
+    }
+    if directory is not None:
+        wanted = {name.lower().replace("_", " ") for name in only or []}
+        ready = [
+            s
+            for s in chosen["stems"]
+            if s.get("status") == "complete"
+            and (not wanted or (s.get("stem") or "").lower() in wanted)
+        ]
+        if not ready:
+            raise SunoError(
+                "not_ready", "Stems are still processing; retry shortly.", clip_id=clip_id
+            )
+        if all(not s.get("audio_url") for s in ready):
+            raise SunoError("download_restricted", RESTRICTED_MESSAGE, clip_id=clip_id)
+        named = [{**s, "title": s.get("stem") or s.get("title")} for s in ready]
+        request = {"stem_from_id": clip_id, "variant": variant}
+        result.update(client.download(named, directory, request))
+    return result
