@@ -205,15 +205,44 @@ def write_manifest(
     manifest["clips"] = [c for c in manifest.get("clips", []) if c.get("id") not in new_ids]
     manifest["clips"] += [slim(clip) for clip in clips]
     file_ids = {entry["clip_id"] for entry in files}
-    manifest["files"] = [f for f in manifest.get("files", []) if f.get("clip_id") not in file_ids]
-    manifest["files"] += files
+    kept = [f for f in manifest.get("files", []) if f.get("clip_id") not in file_ids]
+    legacy = manifest.get("request")
+    if request is not None and legacy is not None and request != legacy:
+        # Older manifests kept one request for the whole folder; pin it to their files
+        # before the folder-level one changes, so their BPM stays theirs.
+        for entry in kept:
+            entry.setdefault("request", legacy)
+    manifest["files"] = kept + files
     manifest["created_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     if request is not None:
         manifest["request"] = request
     path.write_text(json.dumps(manifest, indent=2))
 
 
-def import_downloads(clips: list[dict], matches: dict[str, dict], directory: Path) -> list[dict]:
+def previous_imports(directory: Path, clip_ids: list[str]) -> dict[str, dict]:
+    """Clips already in this folder's manifest whose file is still there, unchanged."""
+    path = directory / "manifest.json"
+    try:
+        manifest = json.loads(path.read_text()) if path.is_file() else {}
+    except ValueError:
+        return {}
+    found = {}
+    for entry in manifest.get("files", []):
+        if entry.get("clip_id") not in clip_ids or entry["clip_id"] in found:
+            continue
+        for candidate in (
+            Path(entry.get("path", "")),
+            directory / Path(entry.get("path", "")).name,
+        ):
+            if candidate.is_file() and sha256(candidate) == entry.get("sha256"):
+                found[entry["clip_id"]] = {**entry, "path": str(candidate)}
+                break
+    return found
+
+
+def import_downloads(
+    clips: list[dict], matches: dict[str, dict], directory: Path, request: dict | None = None
+) -> list[dict]:
     """Copy matched downloads into the project; the user's originals stay where they are."""
     directory.mkdir(parents=True, exist_ok=True)
     files = []
@@ -231,7 +260,7 @@ def import_downloads(clips: list[dict], matches: dict[str, dict], directory: Pat
             "origin": "browser_download",
             "downloaded_from": str(source),
             "matched_by": "embedded_id" if entry.get("clip_id") else "title_and_duration",
-            "request": recalled_request(clip["id"]),
+            "request": request or recalled_request(clip["id"]),
         })  # fmt: skip
     return files
 

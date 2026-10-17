@@ -419,3 +419,34 @@ def test_imports_keep_earlier_manifest_entries_and_inbox_lists_files(fake, capsy
     code, listing = run(fake, capsys, "inbox")
     assert code == 0
     assert {d["clip_id"] for d in listing["downloads"]} == {SONG_A, SONG_B}
+
+
+@needs_ffmpeg
+def test_older_folder_manifests_keep_their_own_bpm(fake, tmp_path):
+    forbidden_songs(fake)
+    out = tmp_path / "songs"
+    old = suno_download(out / "Old-Song-11111111.m4a", seconds=0.5)
+    (out / "manifest.json").write_text(json.dumps({  # the pre-merge format: one request per folder
+        "source": "suno", "request": {"skitz_bpm": 120}, "clips": [],
+        "files": [{"clip_id": "11111111-old", "path": str(old), "sha256": suno_inbox.sha256(old)}],
+    }))  # fmt: skip
+    suno_download(tmp_path / "Downloads" / "new.m4a", SONG_A)
+    client = suno.SunoClient(transport=httpx.MockTransport(fake))
+    result = client.download(client.feed([SONG_A]), out, request={"skitz_bpm": 90})
+    assert result["files"][0]["request"] == {"skitz_bpm": 90}  # explicit request wins
+    assert samples.suno_bpm(old) == 120
+    assert samples.suno_bpm(Path(result["files"][0]["path"])) == 90
+
+
+@needs_ffmpeg
+def test_rerunning_a_download_reuses_files_already_imported(fake, capsys, tmp_path, monkeypatch):
+    forbidden_songs(fake)
+    original = suno_download(tmp_path / "Downloads" / "a.m4a", SONG_A)
+    out = tmp_path / "songs"
+    assert run(fake, capsys, "download", SONG_A, "--out", str(out))[0] == 0
+    original.unlink()  # The user tidies ~/Downloads.
+    opened = []
+    monkeypatch.setattr(suno_inbox.webbrowser, "open", opened.append)
+    code, result = run(fake, capsys, "download", SONG_A, "--out", str(out), "--wait-for-browser")
+    assert code == 0, result
+    assert [f["clip_id"] for f in result["files"]] == [SONG_A] and opened == []

@@ -452,16 +452,21 @@ class SunoClient:
                 "origin": "suno_cdn", "request": request or suno_inbox.recalled_request(clip["id"]),
             })  # fmt: skip
         if restricted:
-            if wait_for_browser:
+            # Clips imported into this folder before are reused, even if the user has
+            # since removed the original from ~/Downloads.
+            previous = suno_inbox.previous_imports(directory, [clip["id"] for clip in restricted])
+            files += list(previous.values())
+            needed = [clip for clip in restricted if clip["id"] not in previous]
+            if needed and wait_for_browser:
                 matches = suno_inbox.wait_for_downloads(
-                    restricted,
+                    needed,
                     timeout,
                     open_pages=open_pages,
                     log=lambda m: print(m, file=sys.stderr),
                 )
             else:
-                matches = suno_inbox.match(restricted, suno_inbox.scan())
-            files += suno_inbox.import_downloads(restricted, matches, directory)
+                matches = suno_inbox.match(needed, suno_inbox.scan()) if needed else {}
+            files += suno_inbox.import_downloads(needed, matches, directory, request)
         suno_inbox.write_manifest(directory, clips, files, request)
         result = {"directory": str(directory), "files": files}
         saved = {entry["clip_id"] for entry in files}
