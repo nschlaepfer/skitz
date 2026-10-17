@@ -18,29 +18,86 @@ from skitz_music.analysis import (
 from skitz_music.render import render_score
 ```
 
-Create `Score(tracks=(Track(id="melody", name="Melody", events=(
-Event(id="m001", offset="0", duration="3", pitch="G4"),)),))`.
-Offsets and durations are exact strings in quarter-note units. Pitch spelling uses
-music21 (`B-3`, `F#4`); `pitch=None` is an explicit rest. V1 supports fixed meter
-and tempo, monophonic tracks, ties and basic articulations. Reject unsupported
-imports rather than silently discarding chords, meter changes or tempo changes.
-
-`Project("piece").create(score, protected_tracks=["soprano"])` creates an immutable
-baseline. `project.read()` returns HEAD. Always inspect before editing:
+Scores use schema 2 (`uv run skitz schema` prints it; `skitz schema patch` prints
+the edit format):
 
 ```python
-before = project.read()
-report = project.apply_score_patch(
-    expected_revision=before.revision,
-    edits=[{"event_id": "b002", "set": {"pitch": "D3"}}],
-    allowed_measures=[2],
-    reason="Repair bass motion in bar 2",
+score = Score(
+    title="Sketch",
+    key="C major",
+    meter_map=({"measure": 1, "meter": "4/4"}, {"measure": 5, "meter": "3/4"}),
+    tempo_map=({"measure": 1, "bpm": 96}, {"measure": 5, "bpm": 120}),
+    tracks=(
+        Track(id="melody", name="Melody", program=73, events=(
+            Event(id="m001", offset="0", duration="3/2", pitches=("E5",)),
+            Event(id="m002", offset="3/2", duration="1/2", pitches=("D5",)),
+            ...,
+        )),
+        Track(id="piano", name="Piano", events=(
+            Event(id="p001", offset="0", duration="4", pitches=("C4", "E4", "G4")),
+            ...,
+        )),
+    ),
 )
 ```
 
-Existing event pitches, ties and articulations can be changed. Timing, IDs and
-track identities are immutable in this patch API. Use the project rollback API
-to restore a saved revision. Do not edit `.skitz` files directly or remove policy.
+Offsets and durations are exact strings in quarter-note units. Pitch spelling uses
+music21 (`B-3`, `F#4`). `pitches` holds none (an explicit rest), one (a note) or
+several (a chord, stored low to high, no doubled keys). A tie joins a whole event to
+the next one with the same pitches. Each track is one rhythmic line: events never
+overlap, so independent rhythms need separate tracks. Meter and tempo (quarter
+notes per minute) change only at measure starts; each map starts at measure 1 and
+lists real changes only. Every track must fill whole measures of the meter map and
+all tracks end together. `meter="3/4"`, `tempo=90` and `pitch="G4"` are accepted
+shorthand. Imports keep chords, meter/tempo changes at barlines and staccato, tenuto
+or accent; they reject voices inside one part, pickups, changes inside a measure and
+anything else they cannot hold exactly.
+
+`Project("piece").create(score, protected_tracks=["melody"])` creates an immutable
+baseline. `project.read()` returns HEAD. Always inspect before editing:
+`inspect_score(score)` lists each event's measures and a measure grid with start,
+meter and tempo per measure.
+
+```python
+before = project.read()  # p002: a half-note chord at the start of bar 2
+report = project.apply_score_patch(
+    expected_revision=before.revision,
+    edits=[
+        {"op": "split", "event_id": "p002", "durations": ["1", "1"], "new_ids": ["p002b"]},
+        {"event_id": "p002b", "set": {"pitches": ["D4", "F4", "B4"]}},
+    ],
+    allowed_measures=[2],
+    reason="Add a passing chord in bar 2",
+)
+```
+
+Edits apply in order, and measure numbers mean the score as it is at that step:
+
+- `set` (the default op): `pitches` (or `pitch`), `tie`, `articulation` or `duration`.
+  The offset never moves.
+- `insert`: `track_id` and a full `event` with a new ID at an exact offset.
+- `delete`: `event_id`. Other edits must fill its time.
+- `split`: `event_id`, part `durations` that add up to the event, `new_ids` for the
+  parts after the first (which keeps its ID and articulation); `tie: true` holds the
+  sound instead of restriking.
+- `merge`: back-to-back `event_ids` of one track become the earliest event.
+- `replace`: `track_id`, contiguous `measures` and `events` (ID, duration, pitches,
+  tie, articulation; no offsets) that fill those measures exactly. The track's events
+  starting there are removed; reuse a removed ID to keep its identity.
+- `transpose`: `track_id`, a spelled `interval` (`M2`, `-P5`, `m3`, `P8`) and optional
+  `measures` (whole track when omitted).
+- `set_tempo` / `set_meter`: `measure` and `bpm` / `meter`, or null to remove that
+  change.
+
+Nothing shifts implicitly: a patch that leaves a gap, an overlap, a broken tie or
+an incomplete measure is rejected whole, with the findings. Every measure whose
+events, barlines, meter or tempo change must be in `allowed_measures` (a tempo
+change affects measures until the next change; a meter change that alters bar
+length moves every later barline). New IDs must be unused, untouched events keep
+their IDs, and protected tracks cannot change. The report lists changed, added and
+removed event IDs and `changed_measures`. Use the project rollback API to restore a
+saved revision. Do not edit `.skitz` files directly or remove policy. Schema-1
+projects migrate automatically on first read; old revision IDs keep working.
 
 `validate_score` checks structure independently of models. `analyze_voice_leading`
 checks declared chorale conventions, not universal musical quality. Findings
@@ -49,7 +106,9 @@ output_dir, soundfont=sf2_path, audio=True, engrave=True)` emits MIDI, MusicXML,
 LilyPond, PDF, WAV and a hash/version manifest. Inspect the manifest for failures.
 With no `soundfont`, it uses `SKITZ_SOUNDFONT` or the font from `skitz soundfont
 install`; without any, it skips audio and sets `audio_skipped`. `skitz_music.playback.play(project_or_file)`
-plays the newest audio render of HEAD.
+plays the newest audio render of HEAD; pass `background=True` so the turn
+continues, and the user's Skitz screen shows live spectrum bars while it plays.
+`skitz_music.playback.stop()` stops it.
 
 Never describe score analysis as listening. Preserve first attempts and every
 repair during evaluations. Auggie's Bach Benchmark is inspiration and a separate

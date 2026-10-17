@@ -1,0 +1,1 @@
+- Skitz splash header: the SKITZ mark renders in a magenta-to-cyan gradient with a light sweep at startup and every 12 s (themes/skitz-shimmer.ts). It redraws only while a sweep runs; SKITZ_ANIMATIONS=off keeps it static. Lives in the interactive client because the session daemon ignores extension headers.

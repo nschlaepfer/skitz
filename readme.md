@@ -59,12 +59,13 @@ advanced diagnostic text remain for a later music-interface pass.
 ## Music Tools
 
 ```sh
-uv run skitz schema
+uv run skitz schema            # score format; `skitz schema patch` for edits
 uv run skitz create my-piece score.json --protect soprano
 uv run skitz inspect my-piece
 uv run skitz validate my-piece
 uv run skitz analyze my-piece
 uv run skitz patch my-piece patch.json
+uv run skitz migrate my-piece  # schema-1 projects also migrate on first read
 uv run skitz render my-piece --soundfont /path/to/GeneralUser-GS.sf2
 uv run skitz verify my-piece --require-audio
 uv run skitz export my-piece accepted-piece.zip
@@ -75,12 +76,15 @@ uv run skitz export my-piece accepted-piece.zip
 uncompressed MusicXML. Unsupported constructs fail explicitly. Original Skitz
 scripts and documentation live in `legacy/`; original examples remain in `Examples/`.
 
-Scores use exact quarter-note fractions, spelled pitches, stable event IDs,
-monophonic tracks, fixed meter/tempo, explicit rests, ties and basic articulations.
-The canonical JSON revision is the source of truth. Edits currently support
-pitch, tie and articulation changes within named measures. Arbitrary DAW sessions,
-polyphonic track import, changing tempo/meter maps and lossless LilyPond import
-are not supported in this first version.
+Scores (schema 2) use exact quarter-note fractions, spelled pitches, stable event
+IDs, explicit rests, ties and basic articulations. An event can be a chord, each
+track is one rhythmic line, and meter and tempo maps change at measure starts. The
+canonical JSON revision is the source of truth. Patches change pitches, chords, ties
+and articulations, split, merge, insert, delete and resize events, rewrite a
+track's whole measures, transpose, and set tempo or meter, all against an expected
+revision and within named measures, with protected tracks immutable. Arbitrary DAW
+sessions, independent voices inside one track, mid-measure tempo or meter changes,
+key changes and lossless LilyPond import are not supported.
 
 ## Suno Songs
 
@@ -213,7 +217,29 @@ it, allows use for private or commercial music. Skitz doesn't bundle the file.
 Renders use `--soundfont`, then `SKITZ_SOUNDFONT`, then the installed font. With
 none, audio is skipped with a hint (`audio_skipped`) rather than failing the render.
 An explicit `--soundfont` that doesn't exist fails. `skitz play <file>` plays any
-audio, and `--background` / `--stop` control playback. For only notation/MIDI, use
+audio, and `--background` / `--stop` control playback.
+
+## Animations
+
+The agent screen is music-themed. While the agent works, the spinner is a four-bar
+equalizer; the SKITZ mark shimmers in a magenta-to-cyan gradient; and whenever audio
+plays (`skitz play … --background`, or the agent playing a render), live spectrum
+bars appear above the editor. `skitz play <project|file> --visualize` shows the same
+bars in any terminal. The bars come from the audio itself: a Hann-window FFT in 32
+log-spaced bands at 20 fps, computed when playback starts (about 0.5 s for a
+3-minute song). The loader and visualizer are a Skitz extension
+(`apps/cli/skitz-visuals.ts`); the header shimmer lives in the runtime's splash
+(`themes/skitz-shimmer.ts`), because the session daemon doesn't forward extension
+headers. Set `SKITZ_ANIMATIONS=off` for the stock screen.
+
+Behind it all, an animated ASCII gradient fills the screen, modeled on React Bits'
+[Gradient ASCII](https://reactbits.dev/backgrounds/gradient-ascii) background (horizon
+shape) and written from scratch for the terminal. Light falls from the top over a dark
+arched horizon in their default blues, drawn with ` =+xX0S8#@` from dim to bright, with
+drift, flicker and grain. It only fills empty space and fades out within about 14
+columns, and two rows, of any text, so messages sit in a clear pocket. It runs only in
+fullscreen mode (never in scrollback) at 8 fps, about 1 ms per frame.
+`SKITZ_BACKGROUND=off` turns off just the backdrop. For only notation/MIDI, use
 `--no-audio`; for only source/MIDI/MusicXML, also use `--no-engrave`.
 
 Each render records the revision, tool versions, SoundFont hash, synthesis settings
