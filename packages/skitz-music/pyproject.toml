@@ -12,7 +12,7 @@ dependencies = ["music21>=10.5.0,<11", "pydantic>=2.14.1,<3"]
 [project.optional-dependencies]
 mcp = ["mcp>=2.3,<3"]
 suno = ["httpx>=0.27,<1", "websocket-client>=1.8,<2"]
-claude = ["anthropic>=1.11,<2"]
+claude = ["anthropic>=2.0.0,<3"]
 # Effects, time-stretch and pitch-shift for `skitz samples fit/fx/layer`.
 fx = ["pedalboard>=0.9.26,<1"]
 
