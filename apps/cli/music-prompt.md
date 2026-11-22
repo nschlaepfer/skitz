@@ -15,6 +15,17 @@ include the editorial reason for each change. Leave suggestions in review.
 Report the resulting change and any review flags. Preserve source media. If
 Scarlet is unavailable, point the user to `skitz scarlet connect --help`.
 
+To add a rendered Skitz score or mix to a video, identify the connected
+project with `project_get`, then run
+`uv run skitz scarlet stage-audio SOURCE --project PROJECT_ID`. Use the returned
+relative path with `asset_add` and set kind to audio. Pass the asset's media ID
+and measured duration to `timeline_propose` to place the clip on a dedicated audio
+track against the current timeline version. Keep the original audio in place.
+Use the requested start, length, and gain. When no length is specified, fit the
+cue within the current picture. If an audio-capable evaluator is available,
+use it to check the rendered mix.
+Read the proposed version to verify the track, clip bounds and gain.
+
 Inspect an existing project before editing. The canonical Score JSON revision is
 the source of truth; MIDI, MusicXML, LilyPond and audio are derived artifacts.
 Declare the affected measures and preserve protected tracks. Apply edits through

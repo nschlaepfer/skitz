@@ -104,6 +104,21 @@ Example request:
 > Inspect the Scarlet project and propose cuts for repeated takes in the first
 > two minutes. Keep natural pauses and flag ambiguous cuts for review.
 
+To score a video, ask Skitz to render a cue or use an existing mix and place it
+under the picture on a dedicated audio track. Skitz stages the file, imports it
+through Scarlet and proposes an editable timeline version for review. You can also
+stage the file manually and use the returned relative path with Scarlet's
+`asset_add` tool.
+
+```sh
+uv run skitz scarlet stage-audio /path/to/mix.wav --project "$PROJECT_ID"
+```
+
+Staged files and OTIO exports stay in the connected project's artifact directory
+under `~/.skitz/agent/scarlet-artifacts` (or under `SKITZ_HOME`). If you registered
+Scarlet with an earlier version of this integration, rerun `connect --force`
+with your connection details to enable asset import and persistent exports.
+
 ## Music Tools
 
 ```sh
