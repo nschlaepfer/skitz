@@ -120,7 +120,11 @@ reproduction. Consult `docs/evaluation.md` in the Skitz checkout for conditions.
 Suno makes finished, produced audio from a text description, or from lyrics plus
 style tags. That is different from the editable scores above. Use it when the user
 asks for a full song or a Suno track. Each generation makes 2 clips and spends the
-user's Suno credits, so confirm before generating more than once.
+user's Suno credits. When the user has set a daily budget (`SKITZ_SUNO_BUDGET` or
+`skitz suno budget set N`), generate inside it without asking each time: `generate`
+refuses with `budget_exceeded` (exit code 8) before the next one would pass it. Then
+stop and ask. Never change the budget yourself. Without a budget, confirm before
+generating more than once.
 
 ```python
 from pathlib import Path
@@ -130,10 +134,18 @@ suno = SunoClient()  # reads SUNO_COOKIE or ~/.skitz/suno/cookie
 suno.billing()       # {"credits": ..., "plan": ...}
 payload = build_payload(description="warm lofi beat about rainy mornings", model="v6")
 # Custom mode: build_payload(lyrics="[Verse]\n...", tags="indie folk, male vocals", title="...")
-clips = suno.generate(payload)
+folder = Path("songs/rainy-mornings")
+clips = suno.generate(payload, output_dir=folder)  # also kept as a job in ~/.skitz/suno/jobs.json
 done = suno.wait([c["id"] for c in clips], timeout=300)
-suno.download(done, Path("songs/rainy-mornings"), request=payload)  # audio + manifest.json
+suno.download(done, folder, request=payload)  # audio + manifest.json
 ```
+
+To find a song that already exists, search the library instead of generating:
+`library_listing(suno, search="JUJU B")` (from `skitz_music.suno`) returns the matching
+songs, each with `downloaded` and `song_url`. Every generation is kept as a job with
+its output folder. After a restart or a `timeout`,
+`skitz_music.suno_jobs.resume(suno, wait_for_browser=True)` (or `skitz suno jobs
+--resume`) waits for the clips and saves each job into its folder.
 
 As of October 2026, Suno serves no audio to API clients; its Download button builds the
 file in the browser, with the clip id in the file's metadata. `download` imports the
@@ -151,9 +163,13 @@ Making stems needs a captcha in the web app, so never try to automate it.
 `suno.lyrics(prompt)` drafts lyrics without spending credits. Model aliases are
 `v6` (default), `v6-wild`, `v6-mini`, and the older `v5`, `v4.5+`, `v4.5` and `v4`. Errors are `SunoError` with a `kind`. Stop and
 tell the user on `auth_missing` or `auth_expired` (save a fresh cookie with
-`skitz auth login suno`), `captcha_required` (create one song by hand on suno.com) or
-`out_of_credits`. Never try to solve or get around a captcha. On `timeout`, call
-`wait` again with the same ids. Suno audio is a separate artifact, not a revision of
+`skitz auth login suno`; Skitz has already tried to reconnect from its Chrome profile),
+`captcha_required`, `out_of_credits` or `budget_exceeded`. On `captcha_required`, ask
+the user to solve it, then call `suno.generate(payload, wait_for_captcha=True)`. That
+opens suno.com/create in their browser, waits until Suno stops asking, and retries
+once. Never try to solve or get around a captcha. Transient errors (429, 5xx, network)
+are already retried. On `timeout`, call `wait` again with the same ids, or resume the
+jobs. Suno audio is a separate artifact, not a revision of
 a Skitz score.
 
 ## Samples from Suno

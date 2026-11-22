@@ -2,13 +2,22 @@
 
 Prints one JSON object to stdout; progress goes to stderr. Exit codes: 0 ok, 1 usage,
 2 API error, 3 cookie missing or expired, 4 captcha required, 5 out of credits,
-6 timed out (wait again with the same ids), 7 audio must be downloaded on suno.com.
-Codes 3-5 and 7 need a person to act.
+6 timed out (wait again with the same ids, or `jobs --resume`), 7 audio must be
+downloaded on suno.com, 8 the daily credit budget would be passed. Codes 3-5, 7 and 8
+need a person to act.
 
 Suno builds downloads in the browser, so for songs it no longer serves, `download`
 (and `--out`) take the files from ~/Downloads or ~/.skitz/suno/inbox, matched by the
 clip id Suno embeds in each file. `--wait-for-browser` opens the song pages and waits
-for the user to click Download; `inbox` lists the Suno files found.
+for the user to click Download; `inbox` lists the Suno files found, and `library`
+lists (or searches) the account's songs, marking which are downloaded.
+
+Every generate is kept in ~/.skitz/suno/jobs.json with its output folder, so `jobs
+--resume` finishes it after a restart. A daily budget (SKITZ_SUNO_BUDGET or `budget
+set N`) is checked before each generation and spending is logged to spend.jsonl.
+`--wait-for-captcha` opens suno.com/create for a person to solve a captcha and retries
+once Suno stops asking. Requests are retried on 429/5xx and network errors, and an
+expired session is refreshed once from the Skitz Chrome profile.
 """
 
 import argparse
@@ -18,19 +27,21 @@ from pathlib import Path
 
 import httpx
 
+from . import suno_budget, suno_jobs
 from .suno import (
     DEFAULT_MODEL,
     MODELS,
     SunoClient,
     SunoError,
     build_payload,
+    check_budget,
     download_stems,
     inbox_listing,
+    library_listing,
     request_record,
     slim,
     tempo_from_downbeats,
 )
-from .suno_inbox import remember_request
 
 
 def parser() -> argparse.ArgumentParser:
@@ -79,6 +90,12 @@ def parser() -> argparse.ArgumentParser:
     generate.add_argument("-w", "--wait", action="store_true", help="Block until clips finish")
     generate.add_argument("-o", "--out", help="Wait, then save mp3s and a manifest here")
     generate.add_argument("--dry-run", action="store_true", help="Print the payload only")
+    generate.add_argument(
+        "--wait-for-captcha",
+        action="store_true",
+        help="If Suno wants a captcha, open suno.com/create for you to solve it, then retry",
+    )
+    generate.add_argument("--captcha-timeout", type=float, default=900)
     waiting(generate)
     browser(generate)
 
@@ -97,6 +114,24 @@ def parser() -> argparse.ArgumentParser:
     download.add_argument("--timeout", type=float, default=600)
     browser(download)
     commands.add_parser("inbox", help="List Suno files found in ~/Downloads and the inbox")
+    library = commands.add_parser(
+        "library", help="List or search your Suno songs, marking which are downloaded"
+    )
+    library.add_argument("-s", "--search", help="Only songs whose title or style contains this")
+    library.add_argument("-n", "--limit", type=int, default=20)
+    library.add_argument(
+        "--pages", type=int, default=25, help="Most library pages (20 clips each) to look through"
+    )
+    library.add_argument("--stems", action="store_true", help="Include stems made on suno.com")
+    jobs = commands.add_parser("jobs", help="Generations still in progress, with live status")
+    jobs.add_argument("--resume", action="store_true", help="Wait for open jobs and download them")
+    jobs.add_argument("--all", action="store_true", help="Include finished jobs")
+    jobs.add_argument("--dismiss", metavar="JOB", help="Stop tracking a job")
+    waiting(jobs)
+    browser(jobs)
+    budget = commands.add_parser("budget", help="Show or set the daily credit budget")
+    budget.add_argument("action", nargs="?", choices=["show", "set", "clear"], default="show")
+    budget.add_argument("credits", nargs="?", type=float, help="Credits per day (with set)")
     stems = commands.add_parser(
         "stems", help="List or download stems made on suno.com (Edit > Get Stems)"
     )
@@ -135,24 +170,40 @@ def run(args: argparse.Namespace, transport: httpx.BaseTransport | None = None) 
             args.bpm,
         )
         if args.dry_run:
-            return {"status": "dry_run", "payload": payload}
+            return {"status": "dry_run", "payload": payload, "budget": check_budget(payload["mv"])}
         client = SunoClient(transport=transport)
         print(f"[suno] generating with {payload['mv']}", file=sys.stderr)
-        ids = [clip["id"] for clip in client.generate(payload)]
         request = request_record(payload, args.bpm)
-        remember_request(ids, request)
+        out = Path(args.out).resolve() if args.out else None
+        clips = client.generate(payload, request, out, args.wait_for_captcha, args.captcha_timeout)
+        ids = [clip["id"] for clip in clips]
         if not (args.wait or args.out):
-            return {"status": "submitted", "ids": ids}
+            return {"status": "submitted", "ids": ids, "job": ids[0]}
         return finish(client, ids, args, request)
     if args.command == "inbox":
         return inbox_listing()
+    if args.command == "budget":
+        return budget(args)
+    if args.command == "jobs" and args.dismiss:
+        job = suno_jobs.dismiss(args.dismiss)
+        if job is None:
+            raise SunoError("usage", f"No job {args.dismiss}; `skitz suno jobs --all` lists them.")
+        return {"status": "dismissed", "job": job["id"]}
 
     client = SunoClient(transport=transport)
     if args.command == "whoami":
         billing = client.billing()
-        return {"session_id": client.session_id, **billing}
+        return {"session_id": client.session_id, **billing, "budget": suno_budget.status()}
     if args.command == "status":
         return {"clips": [slim(clip) for clip in client.feed(args.ids)]}
+    if args.command == "library":
+        return library_listing(client, args.search, args.limit, args.pages, args.stems)
+    if args.command == "jobs":
+        if args.resume:
+            return suno_jobs.resume(
+                client, args.timeout, args.interval, args.wait_for_browser, not args.no_open
+            )
+        return suno_jobs.listing(client, args.all)
     if args.command == "wait":
         return finish(client, args.ids, args)
     if args.command == "download":
@@ -172,6 +223,22 @@ def run(args: argparse.Namespace, transport: httpx.BaseTransport | None = None) 
     if args.command == "lyrics":
         return client.lyrics(args.prompt, args.timeout)
     raise SunoError("usage", f"Unknown command {args.command}")
+
+
+def budget(args: argparse.Namespace) -> dict:
+    if args.action == "set":
+        if args.credits is None or args.credits < 0:
+            raise SunoError("usage", "Give the credits per day: skitz suno budget set 50")
+        suno_budget.set_limit(args.credits)
+    elif args.action == "clear":
+        suno_budget.set_limit(None)
+    try:
+        state = suno_budget.status()
+    except ValueError as error:
+        raise SunoError("usage", str(error)) from None
+    if args.action != "show" and state["source"] == "env":
+        state["note"] = "SKITZ_SUNO_BUDGET is set, and it wins over the saved budget."
+    return {**state, "budget_file": str(suno_budget.budget_file())}
 
 
 def finish(
@@ -206,6 +273,6 @@ def main(argv: list[str], transport: httpx.BaseTransport | None = None) -> int:
     except httpx.HTTPError as error:
         print(json.dumps({"status": "failed", "error_kind": "network_error", "error": str(error)}))
         return 2
-    except OSError as error:
+    except (OSError, ValueError) as error:
         print(json.dumps({"status": "failed", "error_kind": "usage", "error": str(error)}))
         return 1

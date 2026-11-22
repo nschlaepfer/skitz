@@ -1,6 +1,7 @@
 """Local MCP tools for Codex and other MCP clients. No model or API key required."""
 
 import functools
+import json
 
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
@@ -15,6 +16,28 @@ def explained(operation):
     def call(*args, **kwargs):
         try:
             return operation(*args, **kwargs)
+        except (ValueError, OSError) as exc:
+            raise ToolError(str(exc)) from exc
+
+    return call
+
+
+def reported(operation):
+    """Pass Suno errors to the model as their JSON report, so it can see who must act
+    (error_kind captcha_required, budget_exceeded, download_restricted, ...)."""
+    import httpx
+
+    from .suno import SunoError
+
+    @functools.wraps(operation)
+    def call(*args, **kwargs):
+        try:
+            return operation(*args, **kwargs)
+        except SunoError as exc:
+            raise ToolError(json.dumps(exc.report())) from exc
+        except httpx.HTTPError as exc:
+            report = {"status": "failed", "error_kind": "network_error", "error": str(exc)}
+            raise ToolError(json.dumps(report)) from exc
         except (ValueError, OSError) as exc:
             raise ToolError(str(exc)) from exc
 
@@ -69,15 +92,24 @@ def create_server(workspace: str) -> MCPServer:
 
     suno = SunoService(workspace)
     suno_descriptions = {
-        "suno_credits": "Check the user's Suno session and remaining credits.",
+        "suno_credits": (
+            "Check the user's Suno session, remaining credits and today's credit budget "
+            "(daily_limit, spent_today, remaining, next_cost)."
+        ),
         "suno_generate": (
             "Generate a song on the user's Suno account (2 clips; spends credits). Give "
             "description, or lyrics/tags/title. With output_dir, waits and saves the audio and "
-            "a manifest there; otherwise returns clip ids. Set bpm (and usually instrumental) "
-            "when the clips will be cut into samples. Suno makes users download songs in the "
-            "browser: set wait_for_browser to open the song pages and wait while you ask the "
-            "user to click Download on each. A captcha_required or auth_expired error needs "
-            "the user to act; never try to work around it."
+            "a manifest there; otherwise returns clip ids. Every generation is kept as a job "
+            "(see suno_jobs). Set bpm (and usually instrumental) when the clips will be cut "
+            "into samples. Suno makes users download songs in the browser: set "
+            "wait_for_browser to open the song pages and wait while you ask the user to click "
+            "Download on each. When the user has set a daily budget, generate inside it "
+            "without asking each time; budget_exceeded means stop and ask (never change the "
+            "budget yourself). On captcha_required, ask the user to solve it and call again "
+            "with wait_for_captcha=true: that opens suno.com/create in their browser and "
+            "retries once Suno stops asking. Never solve or work around a captcha. "
+            "auth_expired means Skitz could not reconnect: ask the user to run "
+            "`skitz auth login suno`."
         ),
         "suno_status": "Show the status and audio URLs of Suno clips by id.",
         "suno_wait": (
@@ -93,6 +125,18 @@ def create_server(workspace: str) -> MCPServer:
             "with wait_for_browser=true to open the pages and wait (up to timeout seconds)."
         ),
         "suno_inbox": "List Suno songs already downloaded to ~/Downloads or the inbox, by clip id.",
+        "suno_library": (
+            "List the user's Suno songs, newest first, or search them by title or style "
+            "(search, case-insensitive). Each song has downloaded (its file is already in "
+            "~/Downloads or the inbox) and song_url (where the user clicks Download). Stems "
+            "made on suno.com are left out unless stems=true."
+        ),
+        "suno_jobs": (
+            "Generations that are still open, with live status; they survive restarts. "
+            "resume=true waits (up to timeout seconds) for them and saves each into the "
+            "output_dir it was generated for; wait_for_browser also opens the pages of songs "
+            "that need the user's Download click. include_closed lists finished jobs too."
+        ),
         "suno_lyrics": "Have Suno write song lyrics from a prompt (no credits).",
         "suno_stems": (
             "List the 12 stems (2 variants each) the user made for a clip on suno.com (Edit > "
@@ -106,7 +150,7 @@ def create_server(workspace: str) -> MCPServer:
         ),
     }
     for name, description in suno_descriptions.items():
-        server.tool(name=name, description=description)(getattr(suno, name))
+        server.tool(name=name, description=description)(reported(getattr(suno, name)))
 
     from .samples import SamplesService
 
