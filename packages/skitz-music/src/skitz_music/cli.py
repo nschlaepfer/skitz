@@ -10,6 +10,8 @@ from .fixtures import chorale_fixture
 from .harness import doctor, launch_agent, login
 from .importers import import_notation
 from .render import compile_lilypond, render_score
+from .scarlet import add_command as add_scarlet_command
+from .scarlet import run as run_scarlet
 from .score import Score
 from .service import MusicService
 from .store import Project
@@ -36,11 +38,11 @@ def main() -> int:
 
         return samples_main(argv[1:])
     parser = argparse.ArgumentParser(
-        prog="skitz", description="Editable music with a ChatGPT or Claude agent"
+        prog="skitz", description="Edit music and video with a ChatGPT or Claude agent"
     )
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser(
-        "agent", help="Start the music agent (--provider codex|claude, --model <id>)"
+        "agent", help="Start the creative agent (--provider codex|claude, --model <id>)"
     )
     auth = commands.add_parser("login", help="Sign in with your ChatGPT subscription")
     auth.add_argument("--status", action="store_true")
@@ -123,8 +125,11 @@ def main() -> int:
     commands.add_parser(
         "samples", help="Cut audio into loops and one-shots, then layer them", add_help=False
     )
+    add_scarlet_command(commands.add_parser("scarlet", help="Connect a Scarlet video project"))
     args = parser.parse_args(argv)
     try:
+        if args.command == "scarlet":
+            return run_scarlet(args)
         if args.command == "login":
             return login(args.status)
         if args.command == "doctor":
