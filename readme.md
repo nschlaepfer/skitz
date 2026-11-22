@@ -1,8 +1,8 @@
 # Skitz
 
-A terminal music agent. Run it on your **ChatGPT subscription** or on **Claude**
-with an Anthropic API key, compose an editable score, render it, and make revisions
-that preserve protected tracks.
+A terminal creative agent. Run it on your **ChatGPT subscription** or on **Claude**
+with an Anthropic API key. Compose and render editable music, or connect a Scarlet
+project for video editing.
 
 ## Start
 
@@ -55,6 +55,69 @@ ChatGPT rather than opening an upstream onboarding flow. Internal runtime packag
 names and protocol versions are preserved; the terminal's version label currently
 shows the pinned engine version. Some inherited coding-oriented prompts and
 advanced diagnostic text remain for a later music-interface pass.
+
+## Scarlet Video Editing
+
+Connect an existing [Scarlet](https://github.com/Forward-Future/scarlet) project
+to let Skitz inspect the timeline and transcripts and propose versioned edits.
+Scarlet handles project storage, review and rendering.
+
+**On macOS with the Scarlet desktop app**, open the app and create or open a
+project with media. The commands below assume Scarlet is installed in
+`/Applications`. Set `PROJECT_ID` to the ID that matches the project name.
+
+```sh
+scarlet_data="$HOME/Library/Application Support/com.forwardfuture.scarlet/data"
+uv run skitz scarlet projects --desktop-data "$scarlet_data"
+uv run skitz scarlet connect \
+  --engine /Applications/Scarlet.app/Contents/MacOS/scarlet-engine \
+  --desktop-data "$scarlet_data" \
+  --project "$PROJECT_ID"
+uv run skitz agent
+```
+
+**With a Scarlet source checkout**, install its dependencies with
+`pnpm install --frozen-lockfile` and build with
+`pnpm --filter @scarlet/server... build`. Start the engine with
+`node apps/server/dist/cli.js serve --data /path/to/scarlet-data`. For an existing
+headless project, register the running engine from Skitz:
+
+```sh
+uv run skitz scarlet projects --token-file /path/to/scarlet-data/access-token
+uv run skitz scarlet connect \
+  --checkout /path/to/scarlet \
+  --server http://127.0.0.1:4000 \
+  --token-file /path/to/scarlet-data/access-token \
+  --project "$PROJECT_ID"
+uv run skitz agent
+```
+
+The registration lives in Skitz's own Prime settings. Use `skitz scarlet status`
+to see whether it is registered, `connect --force` with the new connection details
+to switch projects, and `skitz scarlet disconnect` to remove it. Keep the engine or
+desktop app running while you edit. After restarting Scarlet desktop during an
+active Skitz session, start a fresh session or run `await mcp.reload("scarlet")`
+in the agent's Python kernel.
+
+Example request:
+
+> Inspect the Scarlet project and propose cuts for repeated takes in the first
+> two minutes. Keep natural pauses and flag ambiguous cuts for review.
+
+To score a video, ask Skitz to render a cue or use an existing mix and place it
+under the picture on a dedicated audio track. Skitz stages the file, imports it
+through Scarlet and proposes an editable timeline version for review. You can also
+stage the file manually and use the returned relative path with Scarlet's
+`asset_add` tool.
+
+```sh
+uv run skitz scarlet stage-audio /path/to/mix.wav --project "$PROJECT_ID"
+```
+
+Staged files and OTIO exports stay in the connected project's artifact directory
+under `~/.skitz/agent/scarlet-artifacts` (or under `SKITZ_HOME`). If you registered
+Scarlet with an earlier version of this integration, rerun `connect --force`
+with your connection details to enable asset import and persistent exports.
 
 ## Music Tools
 

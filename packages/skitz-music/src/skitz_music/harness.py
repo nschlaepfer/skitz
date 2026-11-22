@@ -108,6 +108,7 @@ def runtime_environment(environ: dict[str, str] | None = None) -> dict[str, str]
             "SKITZ_PRODUCT": "1",
             "SKITZ_DISABLE_UPDATES": "1",
             "PI_OFFLINE": "1",
+            "TSX_TSCONFIG_PATH": str(repository() / "vendor/prime-agent/tsconfig.json"),
         }
     )
     return env
@@ -115,13 +116,18 @@ def runtime_environment(environ: dict[str, str] | None = None) -> dict[str, str]
 
 def node_command(script: Path) -> list[str]:
     prime = repository() / "vendor/prime-agent"
-    tsx = prime / "node_modules/tsx/dist/cli.mjs"
+    tsx = prime / "node_modules/tsx/dist/loader.mjs"
     if not tsx.is_file():
         raise RuntimeError("Install the pinned runtime: npm ci --prefix vendor/prime-agent")
     node = shutil.which("node")
     if not node:
         raise RuntimeError("Node.js 22.8 or newer is required")
-    return [node, str(tsx), "--tsconfig", str(prime / "tsconfig.json"), str(script)]
+    return [node, "--import", str(tsx), str(script)]
+
+
+def run_prime(args: list[str]) -> int:
+    script = repository() / "vendor/prime-agent/packages/coding-agent/src/cli.ts"
+    return subprocess.call([*node_command(script), *args], env=runtime_environment())
 
 
 def read_auth(state: Path | None = None) -> dict:
@@ -261,7 +267,6 @@ def headless(args: list[str]) -> bool:
 def launch_agent(args: list[str]) -> int:
     if args and args[0] in {"update", "/update"}:
         raise ValueError("Skitz pins its Prime runtime; update it through a reviewed source import")
-    script = repository() / "vendor/prime-agent/packages/coding-agent/src/cli.ts"
     prepared = agent_arguments(args)
     provider = "claude" if prepared[1] == "anthropic" else "codex"
     informational = any(arg in {"--help", "-h", "--version", "-v"} for arg in args)
@@ -278,7 +283,7 @@ def launch_agent(args: list[str]) -> int:
         print("Your ChatGPT sign-in is missing or expired. Opening sign-in...", file=sys.stderr)
         if login() != 0:
             return 1
-    return subprocess.call([*node_command(script), *prepared], env=runtime_environment())
+    return run_prime(prepared)
 
 
 def chatgpt_usable() -> bool:
