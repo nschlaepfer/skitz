@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import { buildRlmPrompt } from "../src/core/prompts/index.js";
 import type { HarnessState } from "../src/core/refinement/index.js";
 import type { Skill } from "../src/core/skills.js";
-import { buildSystemPrompt } from "../src/core/system-prompt.js";
+import { buildSystemPrompt, formatHarnessStateSection } from "../src/core/system-prompt.js";
 import { createIpythonToolDefinition } from "../src/core/tools/ipython.js";
 
 function skill(name: string): Skill {
@@ -660,6 +660,32 @@ describe("buildSystemPrompt", () => {
 		expect(prompt).toContain("<name>web-search</name>");
 		expect(prompt).toContain("<type>python</type>");
 		expect(prompt).toContain("<python_import>web_search</python_import>");
+	});
+
+	test("renders a given date and pre-rendered harness section instead of today's state", () => {
+		const harnessState: HarnessState = {
+			schema: 1,
+			entries: { prompt: {}, memory: {}, skill: {}, subagent: {} },
+			refinements: [],
+		};
+		const options = {
+			customPrompt: "Custom base",
+			selectedTools: ["ipython"],
+			cwd: "/repo",
+			currentDate: "2026-01-02",
+			harnessStateSection: "# Continual Harness State\n\nFrozen at conversation start.",
+			harnessState,
+		};
+
+		const prompt = buildSystemPrompt(options);
+		expect(prompt).toContain("Current date: 2026-01-02");
+		expect(prompt).toContain("Frozen at conversation start.");
+		expect(prompt).not.toContain("No saved harness entries yet.");
+		expect(buildSystemPrompt({ ...options, customPrompt: undefined })).toContain("Frozen at conversation start.");
+
+		// Without a section, the state renders exactly as the shared formatter does.
+		const fresh = buildSystemPrompt({ ...options, harnessStateSection: undefined });
+		expect(fresh).toContain(formatHarnessStateSection(harnessState, { selectedTools: ["ipython"] }));
 	});
 
 	test("prompt guidelines are appended and deduplicated", () => {

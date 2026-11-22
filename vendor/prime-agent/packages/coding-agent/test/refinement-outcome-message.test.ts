@@ -2,7 +2,12 @@ import { setKeybindings, type TUI, visibleWidth } from "@earendil-works/pi-tui";
 import stripAnsi from "strip-ansi";
 import { beforeAll, describe, expect, test } from "vitest";
 import { KeybindingsManager } from "../src/core/keybindings.js";
-import { convertToLlm, createRefinementOutcomeMessage, isRefinementOutcomeMessage } from "../src/core/messages.js";
+import {
+	convertToLlm,
+	createHarnessStateUpdateMessage,
+	createRefinementOutcomeMessage,
+	isRefinementOutcomeMessage,
+} from "../src/core/messages.js";
 import type { HarnessEntry, RefinementResult } from "../src/core/refinement/refinement.js";
 import { buildConversationComponents } from "../src/modes/interactive/components/conversation-components.js";
 import { RefinementOutcomeMessageComponent } from "../src/modes/interactive/components/refinement-outcome-message.js";
@@ -147,5 +152,24 @@ describe("RefinementOutcomeMessageComponent", () => {
 		expect(isRefinementOutcomeMessage(message)).toBe(true);
 		expect(convertToLlm([message])).toEqual([]);
 		expect(isRefinementOutcomeMessage({ ...message, details: { ...message.details, edits: [{}] } })).toBe(false);
+	});
+
+	test("tells the model about the new harness state in a separate, hidden message", () => {
+		const update = createHarnessStateUpdateMessage(
+			{
+				refinementId: "refine-rhyme",
+				section: "# Continual Harness State\n\n- [local:rhyme-response-guidance] Rhyme response guidance",
+				systemPromptSection: "# Continual Harness State\n\nNo saved harness entries yet.",
+			},
+			"Added local guidance to make conversational responses rhyme.",
+		);
+
+		expect(update.display).toBe(false);
+		const [llmMessage] = convertToLlm([createRefinementOutcomeMessage(result()), update]);
+		expect(llmMessage?.role).toBe("user");
+		const text = JSON.stringify(llmMessage?.content);
+		expect(text).toContain("Refinement refine-rhyme (Added local guidance to make conversational responses rhyme.)");
+		expect(text).toContain("[local:rhyme-response-guidance] Rhyme response guidance");
+		expect(text).not.toContain("No saved harness entries yet.");
 	});
 });
