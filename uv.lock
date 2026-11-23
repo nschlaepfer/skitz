@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -1115,7 +1115,7 @@ wheels = [
 
 [[package]]
 name = "music21"
-version = "10.5.0"
+version = "10.5.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "chardet" },
@@ -1128,9 +1128,9 @@ dependencies = [
     { name = "requests" },
     { name = "webcolors" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/cd/f4/1f95fda14554cf0e070c8b6bb375a7bc64c020016670766c44bc910a6a84/music21-10.5.0.tar.gz", hash = "sha256:f72676fb953cb592bfb4e3bb246b0a234446f89088aa8a55ec9b5fcef2ce3db2", size = 16752906, upload-time = "2026-06-17T01:22:41.67Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/2b/f1/26524677b282971a66f3bb2ea7d46045a61195d7a1fa6bf1902250615af1/music21-10.5.2.tar.gz", hash = "sha256:4497ddf0383e5c920d434032c28bc98488c80218aa9deeb037fd626453086647", size = 16753329, upload-time = "2026-10-28T07:00:58.473Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/81/4c/4f307e5ab6fbf59233813e58e07128a599c810dd974673449e132ce1432d/music21-10.5.0-py3-none-any.whl", hash = "sha256:9924eff5fbf58490e67cbf3b78a58ba53040e77c281930d354af32a747e94606", size = 20120138, upload-time = "2026-06-17T01:23:08.524Z" },
+    { url = "https://files.pythonhosted.org/packages/be/a3/4948b2326e5957d54e3a754ee66d23d44126996986bb31eb47e22d06df9b/music21-10.5.2-py3-none-any.whl", hash = "sha256:dba8696eafab709a244b6f18c64399edcccf4e96ddd1e0e4de7eff0a291c2dec", size = 20120956, upload-time = "2026-10-28T07:01:25.554Z" },
 ]
 
 [[package]]
@@ -1914,7 +1914,7 @@ requires-dist = [
     { name = "anthropic", marker = "extra == 'claude'", specifier = ">=1.11,<2" },
     { name = "httpx", marker = "extra == 'suno'", specifier = ">=0.27,<1" },
     { name = "mcp", marker = "extra == 'mcp'", specifier = ">=2.3,<3" },
-    { name = "music21", specifier = ">=10.5.0,<11" },
+    { name = "music21", specifier = ">=10.5.2,<11" },
     { name = "pedalboard", marker = "extra == 'fx'", specifier = ">=0.9.26,<1" },
     { name = "pydantic", specifier = ">=2.14.1,<3" },
     { name = "websocket-client", marker = "extra == 'suno'", specifier = ">=1.8,<2" },
