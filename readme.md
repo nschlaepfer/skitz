@@ -104,6 +104,14 @@ Example request:
 > Inspect the Scarlet project and propose cuts for repeated takes in the first
 > two minutes. Keep natural pauses and flag ambiguous cuts for review.
 
+For an essay, trailer, or demo, give Skitz a thesis and the media to work with.
+The built-in [video essay workflow](apps/cli/video-essay/SKILL.md) guides it through
+a scoped first cut, version comparison, preview, and export. For example:
+
+> Make a 30-second opening for our essay from the supplied narration and screen
+> captures. Keep the existing title sequence fixed. Propose the cut for review
+> and give me the Scarlet version and preview.
+
 To score a video, ask Skitz to render a cue or use an existing mix and place it
 under the picture on a dedicated audio track. Skitz stages the file, imports it
 through Scarlet and proposes an editable timeline version for review. You can also

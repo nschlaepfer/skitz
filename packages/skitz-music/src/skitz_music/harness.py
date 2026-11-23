@@ -221,6 +221,8 @@ def agent_arguments(args: list[str], environ: dict[str, str] | None = None) -> l
         "--no-skills",
         "--skill",
         str(root / "packages/skitz-music"),
+        "--skill",
+        str(root / "apps/cli/video-essay/SKILL.md"),
         "--append-system-prompt",
         str(root / "apps/cli/music-prompt.md"),
         # Music-themed loader, animated header and playback visualizer
